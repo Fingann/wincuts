@@ -3,8 +3,6 @@ package keyboard
 import (
 	"fmt"
 	"maps"
-	"os/signal"
-    "os"	
 	"slices"
 	"syscall"
 	"unsafe"
@@ -137,21 +135,11 @@ func (ss *KeyboardHook) Start() error {
 	ss.hookHandle = r1
 
 	go ss.messageLoop()
-	// Ensure that cleanup happens on program exit
-	go ss.handleShutdown()
 
 	fmt.Println("Keyboard hook started")
 	return nil
 }
 
-func (ss *KeyboardHook) handleShutdown() {
-	// Capture OS signals to ensure proper cleanup on exit
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
-
-	<-sigs
-	ss.Stop()
-}
 
 func (ss *KeyboardHook) messageLoop() {
 	var msg MSG
@@ -168,10 +156,6 @@ func (ss *KeyboardHook) messageLoop() {
 
 // Stop removes the keyboard hook and stops processing key events
 func (ss *KeyboardHook) Stop() {
-	// check if the hook is already stopped
-	if ss.hookHandle == 0 {
-		return
-	}	
 	close(ss.stopChannel)
 	if ss.hookHandle != 0 {
 		procUnhookWindowsHookEx.Call(ss.hookHandle)
@@ -179,4 +163,3 @@ func (ss *KeyboardHook) Stop() {
 	}
 	fmt.Println("Keyboard hook stopped")
 }
-jj
