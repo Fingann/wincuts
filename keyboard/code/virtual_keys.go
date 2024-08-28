@@ -1,6 +1,7 @@
-package keylogger
+package code
 
-var CodeToVKMap = map[uint32]string{
+
+var CodeMap = map[uint32]string{
 	0x01: "VK_LBUTTON",    // Left mouse button
 	0x02: "VK_RBUTTON",    // Right mouse button
 	0x03: "VK_CANCEL",     // Control-break processing
@@ -193,7 +194,8 @@ var CodeToVKMap = map[uint32]string{
 	0xFE: "VK_OEM_CLEAR", // Clear key
 }
 
-var VKToCodeMap = swapMap(CodeToVKMap)
+var VKMap = swapMap(CodeMap)
+
 
 func swapMap(vkMap map[uint32]string) map[string]uint32 {
 	vkNameMap := make(map[string]uint32)
