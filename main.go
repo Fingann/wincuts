@@ -2,55 +2,49 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"wincuts/keyboard"
-	"wincuts/keyboard/shortcut"
-	//"wincuts/keyboard/code"
+	"wincuts/keyboard/types"
 )
 
 func main() {
-	hook := keyboard.NewHook()
-	//mapper := code.NewMapper()
+	log.SetFlags(0)
+	log.SetPrefix("error: ")
 
-	// Start the system state which sets the hook and processes key events
-	if err := hook.Start(); err != nil {
-		fmt.Println(err)
-		return
+	if err := run(); err != nil {
+		log.Fatal(err)
 	}
-	defer hook.Stop()
+}
 
-	eventChan := hook.Subscribe()
 
-	keybindingService := shortcut.NewKeybindingService(eventChan)
-	bind,err := shortcut.NewBindingAction([]string{"VK_LSHIFT", "VK_A"}, true, func() error {
-		fmt.Println("Ctrl+Shift+A pressed")
-		return nil
-	})
+
+func run() error {
+	hook,err:= keyboard.NewHook()
 	if err != nil {
-		fmt.Println(fmt.Errorf("Failed to create binding action: %v", err))
-		return
+		return fmt.Errorf("failed to create new hook: %v", err)
 	}
+	hook.Start()
 
 
-	keybindingService.RegisterKeyBindingActions(bind).Start()
-
-	// Process key events in a separate goroutine
-//go func() {
-//	for event := range hook.Subscribe() {
-//		if !event.KeyDown {
-//			continue
-//		}
-//		prettyString,err:=mapper.PrettyPrint(event.PressedKeys)
-//		if err != nil {
-//			fmt.Println(fmt.Errorf("Failed to get pretty string: %v", err))
-//			continue
-//		}
-//		
-//		fmt.Println("Pressed keys:", prettyString)
-//	}
-//}()
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
-	<-signalChan
+
+	fmt.Println("start capturing keyboard input")
+
+	for {
+		select {
+		case <-signalChan:
+			fmt.Println("Received shutdown signal")
+			return nil
+		case k := <- hook.Subscribe():
+			if k.KeyDown {
+				continue
+			}
+			keyB := types.NewKeybinding(k.PressedKeys...)
+			fmt.Println("Keys: ", keyB.PrettyString())
+			continue
+		}
+	}
 }

@@ -2,6 +2,7 @@ package shortcut
 
 import (
 	"fmt"
+	"sync"
 	"wincuts/keyboard"
 )
 
@@ -9,6 +10,8 @@ import (
 type KeybindingService struct {
     eventChan    <- chan keyboard.KeyEvent 
     matcher      *Matcher
+    wg          sync.WaitGroup
+    stopChan   chan struct{}
 }
 
 // NewKeybindingService creates a new KeybindingService
@@ -20,33 +23,27 @@ func NewKeybindingService(eventChan <- chan keyboard.KeyEvent) *KeybindingServic
 }
 
 // RegisterKeyCombo registers a key combination with an action
-func (kbs *KeybindingService) RegisterKeyBindingActions(bindings ...*BindingAction) *KeybindingService {
+func (kbs *KeybindingService) RegisterKeyBindingActions(bindings ...KeyBindingAction) *KeybindingService {
     kbs.matcher.AddBindings(bindings...)
     return kbs
 }
 
 // Start starts the keybinding service to listen for events
 func (kbs *KeybindingService) Start() {
+    kbs.wg.Add(1)
     go func() {
-        for event := range kbs.eventChan {
-            fmt.Println("Received event")
-            if !event.KeyDown {
-                continue
-            }
-            prettyString, err := keyMapper.PrettyPrint(event.PressedKeys)
-            if err != nil {
-                fmt.Println(fmt.Errorf("failed to get pretty string: %v", err))
-                continue
-            }
-            fmt.Println("Pressed keys:", prettyString)
-
-            if binding := kbs.matcher.Match(event); binding != nil {
-                fmt.Println("Matched binding")
-                err := binding.Action()
-                if err != nil {
-                    fmt.Println(fmt.Errorf("failed to execute action: %v", err))
-                }
-            }
+        select {
+        case <- kbs.stopChan:
+            kbs.wg.Done()
+            return
+        case event := <- kbs.eventChan:
+            kbs.matcher.Match(event)
         }
     }()
+}
+
+// Stop stops the keybinding service
+func (kbs *KeybindingService) Stop() {
+    close(kbs.stopChan)
+    kbs.wg.Wait()
 }

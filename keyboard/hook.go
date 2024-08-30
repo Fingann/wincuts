@@ -1,165 +1,102 @@
 package keyboard
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"maps"
 	"slices"
-	"syscall"
-	"unsafe"
-	"wincuts/keyboard/code"
 
-	"golang.org/x/sys/windows"
+	wtypes "wincuts/keyboard/types"
+
+	"github.com/moutend/go-hook/pkg/keyboard"
+	"github.com/moutend/go-hook/pkg/types"
 )
 
-var (
-	user32               = syscall.NewLazyDLL("user32.dll")
-	kernel32             = syscall.NewLazyDLL("kernel32.dll")
-	procSetWindowsHookEx = user32.NewProc("SetWindowsHookExW")
-	procCallNextHookEx   = user32.NewProc("CallNextHookEx")
-	procGetMessage       = user32.NewProc("GetMessageW")
-	procGetModuleHandle  = kernel32.NewProc("GetModuleHandleW")
-	procUnhookWindowsHookEx = user32.NewProc("UnhookWindowsHookEx")
-	procTranslateMessage  = user32.NewProc("TranslateMessage")
-    procDispatchMessage   = user32.NewProc("DispatchMessageW")
-)
-
-const (
-	WH_KEYBOARD_LL = 13
-)
-
-type KBDLLHOOKSTRUCT struct {
-	VKCode    uint32
-	ScanCode  uint32
-	Flags     uint32
-	Time      uint32
-	ExtraInfo uintptr
-}
-
-type MSG struct {
-	HWND    uintptr
-	Message uint32
-	WPARAM  uintptr
-	LPARAM  uintptr
-	Time    uint32
-	Pt      POINT
-}
-
-type POINT struct {
-	X, Y int32
-}
-
-// KeyboardHook holds the state of the modifier keys and manages key events
-type KeyboardHook struct {
-	keyState    map[uint32]bool
-	events      chan KeyEvent
-	stopChannel chan struct{}
-	hookHandle  uintptr
-}
-
-func NewHook() *KeyboardHook {
-	return &KeyboardHook{
-		keyState:    make(map[uint32]bool),
-		events:      make(chan KeyEvent, 10), // Buffer added to avoid blocking
-		stopChannel: make(chan struct{}),
-	}
+type Hook struct {
+	lowLevelChan      chan types.KeyboardEvent
+	keyState          map[wtypes.VirtualKey]bool
+	subscriberManager *SubscriberManager[KeyEvent]
+	ctx               context.Context
+	cancel            context.CancelFunc
+	wg                sync.WaitGroup
 }
 
 type KeyEvent struct {
-	PressedKeys []uint32 
-	KeyCode     uint32
+	PressedKeys []wtypes.VirtualKey
+	KeyCode     wtypes.VirtualKey
 	KeyDown     bool
 }
 
-// HandleKeyPress handles key press events and sends them to the event channel
-func (ss *KeyboardHook) handleKeyPress(vkCode uint32, keyDown bool) {
-	if keyDown {
-		ss.keyState[vkCode] = true
-	} else {
-		delete(ss.keyState, vkCode)
-	}
+func NewHook() (*Hook, error) {
+	lowLevelChan := make(chan types.KeyboardEvent, 100)
+	ctx, cancel := context.WithCancel(context.Background())
+	subscriberManager := NewSubscriberManager[KeyEvent]()
 
-	select {
-	case ss.events <- KeyEvent{
-		PressedKeys: slices.Collect(maps.Keys(ss.keyState)),
-		KeyCode:     vkCode,
-		KeyDown:     keyDown,
-	}:
-		// Event successfully sent
-	default:
-		// If the channel is full, we might decide to log an error, or drop the event
-		fmt.Println("Warning: Event channel is full, dropping key event") //TODO: implement proper logging levels
-	}
+	return &Hook{
+		lowLevelChan:      lowLevelChan,
+		keyState:          make(map[wtypes.VirtualKey]bool),
+		subscriberManager: subscriberManager,
+		ctx:               ctx,
+		cancel:            cancel,
+	}, nil
 }
 
-// lowLevelKeyboardProc is the callback method for the keyboard hook
-func (ss *KeyboardHook) lowLevelKeyboardProc(nCode int32, wParam uintptr, lParam uintptr) uintptr {
-	if nCode >= 0 {
-		fmt.Println("lowLevelKeyboardProc invoked") // Debugging log
-		kbdstruct := (*KBDLLHOOKSTRUCT)(unsafe.Pointer(lParam))
-		keyDown := wParam == code.WM_KEYDOWN || wParam == code.WM_SYSKEYDOWN 
-		ss.handleKeyPress(kbdstruct.VKCode, keyDown)
-	}
-	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, lParam)
-	return ret
-}
-
-// Subscribe allows external clients to receive key events from the hook
-func (ss *KeyboardHook) Subscribe() <-chan KeyEvent {
-	return ss.events
-}
-
-// Start sets up the global keyboard hook and processes key events
-func (ss *KeyboardHook) Start() error {
-	// Get the handle of the current module
-	hInstance, _, err := procGetModuleHandle.Call(0)
-	if hInstance == 0 {
-		return fmt.Errorf("GetModuleHandle failed: %v", err)
+func (h *Hook) Start() error {
+	if err := keyboard.Install(nil, h.lowLevelChan); err != nil {
+		return fmt.Errorf("failed to install keyboard hook: %v", err)
 	}
 
-	// Set the hook on the keyboard events, with a callback to lowLevelKeyboardProc
-	r1, r2, err := procSetWindowsHookEx.Call(
-		uintptr(WH_KEYBOARD_LL),
-		windows.NewCallback(ss.lowLevelKeyboardProc),
-		hInstance,
-		0,
-	)
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		for {
+			select {
+			case <-h.ctx.Done():
+				// Clean up and exit the goroutine
+				return
+			case k := <-h.lowLevelChan:
+				vCode := wtypes.VirtualKey(k.VKCode)
+				isKeyDown := k.Message == types.WM_KEYDOWN || k.Message == types.WM_SYSKEYDOWN
+			
 
-	if r2 != 0 {
-		return fmt.Errorf("SetWindowsHookEx failed: %v", err)
-	}
+				event := KeyEvent{
+					PressedKeys: slices.Collect(maps.Keys(h.keyState)),
+					KeyCode:     vCode,
+					KeyDown:     isKeyDown,
+				}
 
-	if r1 == 0 {
-		return fmt.Errorf("SetWindowsHookEx failed: %v", err)
-	}
-	// Save the hook handle so we can remove it later
-	ss.hookHandle = r1
+				h.subscriberManager.Broadcast(event)
+				if isKeyDown {
+					h.keyState[vCode] = true
+				} else {
+					delete(h.keyState, vCode)
+				}
+			}
+		}
+	}()
 
-	go ss.messageLoop()
-
-	fmt.Println("Keyboard hook started")
 	return nil
 }
 
+func (h *Hook) Stop() error {
+	h.cancel()  // Signal the goroutine to stop
+	h.wg.Wait() // Wait for the goroutine to finish
 
-func (ss *KeyboardHook) messageLoop() {
-	var msg MSG
-	for {
-		ret, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
-		if ret == 0 {
-			break
-		}
-		fmt.Println("Message received:", msg.Message) // Debugging log
-		procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
-		procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
+	if err := keyboard.Uninstall(); err != nil {
+		return err
 	}
+
+	close(h.lowLevelChan) // Close the low-level channel
+	h.subscriberManager.CloseAll() // Close all subscriber channels
+
+	return nil
 }
 
-// Stop removes the keyboard hook and stops processing key events
-func (ss *KeyboardHook) Stop() {
-	close(ss.stopChannel)
-	if ss.hookHandle != 0 {
-		procUnhookWindowsHookEx.Call(ss.hookHandle)
-		ss.hookHandle = 0
-	}
-	fmt.Println("Keyboard hook stopped")
+func (h *Hook) Subscribe() chan KeyEvent {
+	return h.subscriberManager.AddSubscriber()
+}
+
+func (h *Hook) Unsubscribe(ch chan KeyEvent) {
+	h.subscriberManager.RemoveSubscriber(ch)
 }
