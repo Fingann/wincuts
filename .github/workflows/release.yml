@@ -34,7 +34,7 @@ jobs:
         
     - name: Create archive
       run: |
-        Compress-Archive -Path "build/WinCuts.exe", "README.md", "LICENSE", "default_config.yaml" -DestinationPath "build/WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip" -Force
+        Compress-Archive -Path "build/WinCuts.exe", "README.md", "default_config.yaml" -DestinationPath "build/WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip" -Force
       shell: pwsh
         
     - name: Create Release
