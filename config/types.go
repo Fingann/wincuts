@@ -99,10 +99,9 @@ type ShortcutsConfig struct {
 
 // KeyBinding represents a single keyboard shortcut and its associated action
 type KeyBinding struct {
-	Keys     []string `yaml:"keys" json:"keys"`         // List of keys that make up the binding (e.g., ["LAlt", "LShift", "1"])
-	Action   string   `yaml:"action" json:"action"`     // Name of the action to perform (e.g., "SwitchDesktop", "MoveWindowToDesktop")
-	Params   []string `yaml:"params" json:"params"`     // Parameters for the action (e.g., ["1"] for desktop number)
-	Category string   `yaml:"category" json:"category"` // Category for grouping and documentation (e.g., "Desktop", "Window")
+	Keys   []string `yaml:"keys" json:"keys"`     // List of keys that make up the binding (e.g., ["LAlt", "LShift", "1"])
+	Action string   `yaml:"action" json:"action"` // Name of the action to perform (e.g., "SwitchDesktop", "MoveWindowToDesktop")
+	Params []string `yaml:"params" json:"params"` // Parameters for the action (e.g., ["1"] for desktop number)
 }
 
 // GetVirtualKeys converts a slice of key names to VirtualKeys

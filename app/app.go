@@ -139,8 +139,7 @@ func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager, traySvc *systray.S
 
 		slog.Debug("registered shortcut",
 			"keys", types.NewKeybinding(binding.GetVirtualKeys()...).PrettyString(),
-			"action", binding.Action,
-			"category", binding.Category)
+			"action", binding.Action)
 	}
 
 	return svc

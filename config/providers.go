@@ -16,21 +16,18 @@ func (d *DefaultActionProvider) GetActions() map[string]Action {
 		"SwitchDesktop": {
 			Name:        "SwitchDesktop",
 			Description: "Switch to the specified virtual desktop",
-			Category:    "Desktop",
 			ParamTypes:  []string{"desktop"},
 			Validator:   validateSwitchDesktop,
 		},
 		"MoveWindowToDesktop": {
 			Name:        "MoveWindowToDesktop",
 			Description: "Move the active window to specified desktop and switch to it",
-			Category:    "Window",
 			ParamTypes:  []string{"desktop"},
 			Validator:   validateMoveWindowToDesktop,
 		},
 		"CreateDesktop": {
 			Name:        "CreateDesktop",
 			Description: "Create a new virtual desktop",
-			Category:    "Desktop",
 			ParamTypes:  []string{},
 			Validator:   validateCreateDesktop,
 		},

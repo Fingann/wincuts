@@ -1,0 +1,155 @@
+# WinCuts Default Configuration
+# This file was automatically generated from the default configuration.
+# You can modify these values to customize the application behavior.
+# For more information, see the documentation.
+
+logging:
+    level: DEBUG
+ui:
+    tray_icon:
+        size: 22
+        corner_radius: 4
+        padding: 2
+        bg_opacity: 230
+        bg_color:
+            r: 0
+            g: 120
+            b: 215
+            a: 255
+        text_color:
+            r: 255
+            g: 255
+            b: 255
+            a: 255
+        shadow_color:
+            r: 0
+            g: 0
+            b: 0
+            a: 255
+        shadow_opacity: 40
+virtual_desktops:
+    minimum_count: 9
+shortcuts:
+    bindings:
+        - keys:
+            - LAlt
+            - "1"
+          action: SwitchDesktop
+          params:
+            - "1"
+        - keys:
+            - LAlt
+            - LShift
+            - "1"
+          action: MoveWindowToDesktop
+          params:
+            - "1"
+        - keys:
+            - LAlt
+            - "2"
+          action: SwitchDesktop
+          params:
+            - "2"
+        - keys:
+            - LAlt
+            - LShift
+            - "2"
+          action: MoveWindowToDesktop
+          params:
+            - "2"
+        - keys:
+            - LAlt
+            - "3"
+          action: SwitchDesktop
+          params:
+            - "3"
+        - keys:
+            - LAlt
+            - LShift
+            - "3"
+          action: MoveWindowToDesktop
+          params:
+            - "3"
+        - keys:
+            - LAlt
+            - "4"
+          action: SwitchDesktop
+          params:
+            - "4"
+        - keys:
+            - LAlt
+            - LShift
+            - "4"
+          action: MoveWindowToDesktop
+          params:
+            - "4"
+        - keys:
+            - LAlt
+            - "5"
+          action: SwitchDesktop
+          params:
+            - "5"
+        - keys:
+            - LAlt
+            - LShift
+            - "5"
+          action: MoveWindowToDesktop
+          params:
+            - "5"
+        - keys:
+            - LAlt
+            - "6"
+          action: SwitchDesktop
+          params:
+            - "6"
+        - keys:
+            - LAlt
+            - LShift
+            - "6"
+          action: MoveWindowToDesktop
+          params:
+            - "6"
+        - keys:
+            - LAlt
+            - "7"
+          action: SwitchDesktop
+          params:
+            - "7"
+        - keys:
+            - LAlt
+            - LShift
+            - "7"
+          action: MoveWindowToDesktop
+          params:
+            - "7"
+        - keys:
+            - LAlt
+            - "8"
+          action: SwitchDesktop
+          params:
+            - "8"
+        - keys:
+            - LAlt
+            - LShift
+            - "8"
+          action: MoveWindowToDesktop
+          params:
+            - "8"
+        - keys:
+            - LAlt
+            - "9"
+          action: SwitchDesktop
+          params:
+            - "9"
+        - keys:
+            - LAlt
+            - LShift
+            - "9"
+          action: MoveWindowToDesktop
+          params:
+            - "9"
+        - keys:
+            - LAlt
+            - "N"
+          action: CreateDesktop
+          params: []

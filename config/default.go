@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"image/color"
 	"log/slog"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
 // DefaultConfig creates a new Config with default values.
@@ -32,6 +36,41 @@ func DefaultConfig() *Config {
 			Bindings: createDefaultDesktopBindings(),
 		},
 	}
+}
+
+// GenerateDefaultConfigFile generates a YAML file with the default configuration.
+// This is useful for creating a template configuration file or for documenting the default values.
+func GenerateDefaultConfigFile(path string) error {
+	// Create default config
+	cfg := DefaultConfig()
+
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Marshal config to YAML with comments
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Add header comment
+	header := []byte(`# WinCuts Default Configuration
+# This file was automatically generated from the default configuration.
+# You can modify these values to customize the application behavior.
+# For more information, see the documentation.
+
+`)
+	data = append(header, data...)
+
+	// Write to file
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }
 
 // defaultLoggingConfig provides default logging settings
@@ -86,27 +125,24 @@ func createDefaultDesktopBindings() []KeyBinding {
 
 		// Switch to desktop binding (Alt + Number)
 		bindings = append(bindings, KeyBinding{
-			Keys:     []string{"LAlt", desktop},
-			Action:   "SwitchDesktop",
-			Params:   []string{desktop},
-			Category: "Desktop",
+			Keys:   []string{"LAlt", desktop},
+			Action: "SwitchDesktop",
+			Params: []string{desktop},
 		})
 
 		// Move window to desktop binding (Alt + Shift + Number)
 		bindings = append(bindings, KeyBinding{
-			Keys:     []string{"LAlt", "LShift", desktop},
-			Action:   "MoveWindowToDesktop",
-			Params:   []string{desktop},
-			Category: "Window",
+			Keys:   []string{"LAlt", "LShift", desktop},
+			Action: "MoveWindowToDesktop",
+			Params: []string{desktop},
 		})
 	}
 
 	// Add create desktop binding (Alt + N)
 	bindings = append(bindings, KeyBinding{
-		Keys:     []string{"LAlt", "N"},
-		Action:   "CreateDesktop",
-		Params:   []string{},
-		Category: "Desktop",
+		Keys:   []string{"LAlt", "N"},
+		Action: "CreateDesktop",
+		Params: []string{},
 	})
 
 	return bindings

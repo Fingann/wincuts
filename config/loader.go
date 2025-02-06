@@ -12,6 +12,22 @@ import (
 
 // LoadConfigFromArgs loads configuration based on command line arguments
 func LoadConfigFromArgs(args []string) (*Config, error) {
+	// Check for generate-config first
+	for i := 1; i < len(args); i++ {
+		if args[i] == "--generate-config" {
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("--generate-config requires a file path")
+			}
+			path := args[i+1]
+
+			if err := GenerateDefaultConfigFile(path); err != nil {
+				return nil, fmt.Errorf("failed to generate config file: %w", err)
+			}
+			slog.Info("generated default configuration file", "path", path)
+			os.Exit(0) // Exit after generating config
+		}
+	}
+
 	// Start with default configuration
 	config := DefaultConfig()
 
