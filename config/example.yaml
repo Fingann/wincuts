@@ -1,0 +1,108 @@
+# WinCuts Configuration File
+# This file can be used to override the default configuration.
+# Only specify the values you want to override - any unspecified values will use defaults.
+# Usage: wincuts config.yaml
+
+# Logging configuration
+logging:
+  # Valid levels: DEBUG, INFO, WARN, ERROR
+  level: "DEBUG"
+
+# UI Configuration
+ui:
+  tray_icon:
+    # Size of the tray icon in pixels
+    size: 22
+    # Corner radius for the tray icon background
+    corner_radius: 4
+    # Padding around the tray icon content
+    padding: 2
+    # Background opacity (0-255)
+    bg_opacity: 230
+    # Background color in RGBA format
+    bg_color: 
+      r: 0
+      g: 120
+      b: 215
+      a: 255
+    # Text color in RGBA format
+    text_color:
+      r: 255
+      g: 255
+      b: 255
+      a: 255
+    # Shadow color in RGBA format
+    shadow_color:
+      r: 0
+      g: 0
+      b: 0
+      a: 255
+    # Shadow opacity (0-255)
+    shadow_opacity: 40
+
+# Virtual Desktop Configuration
+virtual_desktops:
+  # Minimum number of virtual desktops to maintain
+  minimum_count: 9
+
+# Keyboard Shortcuts
+# Each shortcut requires:
+# - name: A descriptive name for the shortcut
+# - keys: Array of key combinations (see valid keys below)
+# - action: The action to perform (see valid actions below)
+# - params: Parameters for the action (if required)
+# - category: Group for organization (Desktop, Window, etc.)
+shortcuts:
+  # Desktop switching shortcuts
+  - name: "Switch to Desktop 1"
+    keys: ["LAlt", "1"]
+    action: "SwitchDesktop"
+    params: ["1"]
+    category: "Desktop"
+
+  - name: "Switch to Desktop 2"
+    keys: ["LAlt", "2"]
+    action: "SwitchDesktop"
+    params: ["2"]
+    category: "Desktop"
+
+  # Window movement shortcuts
+  - name: "Move Window to Desktop 1"
+    keys: ["LAlt", "LShift", "1"]
+    action: "MoveWindowToDesktop"
+    params: ["1"]
+    category: "Window"
+
+  - name: "Move Window to Desktop 2"
+    keys: ["LAlt", "LShift", "2"]
+    action: "MoveWindowToDesktop"
+    params: ["2"]
+    category: "Window"
+
+  # Create new desktop
+  - name: "Create New Desktop"
+    keys: ["LAlt", "N"]
+    action: "CreateDesktop"
+    params: []
+    category: "Desktop"
+
+  # Example of a custom shortcut
+  - name: "Switch to Last Desktop"
+    keys: ["LAlt", "Tab"]
+    action: "SwitchToLastDesktop"
+    params: []
+    category: "Desktop"
+
+# Valid Keys:
+# Modifiers: LAlt, RAlt, LCtrl, RCtrl, LShift, RShift, LWin, RWin
+# Numbers: 0-9
+# Letters: A-Z
+# Function keys: F1-F12
+# Special keys: Tab, Enter, Space, Backspace, Delete, Escape, Home, End, PageUp, PageDown
+# Arrow keys: Left, Right, Up, Down
+
+# Valid Actions:
+# - SwitchDesktop: Switch to a specific desktop (params: ["desktop_number"])
+# - MoveWindowToDesktop: Move active window to desktop (params: ["desktop_number"])
+# - CreateDesktop: Create a new virtual desktop (params: [])
+# - SwitchToLastDesktop: Switch to previously active desktop (params: []) 

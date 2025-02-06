@@ -12,7 +12,11 @@ import (
 // main is the entry point of the application.
 func main() {
 	// Load and setup configuration
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfigFromArgs(os.Args)
+	if err != nil {
+		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
+	}
 	config.SetupLogging(cfg)
 
 	if err := app.Run(); err != nil {

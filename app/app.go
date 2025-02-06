@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 
 	"wincuts/config"
 	"wincuts/keyboard"
@@ -63,56 +64,96 @@ func EnsureMinimumDesktops(dm DesktopManager, minCount int) {
 }
 
 // setupKeyBindings registers keyboard shortcuts for switching desktops and moving windows.
-// The use of closures to capture the desktop index prevents common closure pitfalls and links user actions to the intended operations.
 func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager, traySvc *systray.Service) *shortcut.Service {
 	subscription := hook.Subscribe()
 	svc := shortcut.NewService(subscription)
 
-	// Map number keys 1-9 to virtual desktops
-	desktopKeys := []types.VirtualKey{
-		types.VK_1, types.VK_2, types.VK_3, types.VK_4, types.VK_5,
-		types.VK_6, types.VK_7, types.VK_8, types.VK_9,
+	// Load configuration
+	cfg, err := config.LoadConfigFromArgs(os.Args)
+	if err != nil {
+		slog.Error("failed to load configuration", "error", err)
+		// Use default config as fallback
+		cfg = config.DefaultConfig()
 	}
 
-	// Get current desktop count to know how many shortcuts to register
-	currentCount := dm.GetCurrentDesktopCount()
-	if currentCount > len(desktopKeys) {
-		currentCount = len(desktopKeys) // Cap at maximum supported keys
-	}
+	// Register each configured binding
+	for _, binding := range cfg.Shortcuts.Bindings {
+		// Validate the binding
+		if err := binding.Validate(); err != nil {
+			slog.Error("invalid key binding",
+				"keys", binding.Keys,
+				"action", binding.Action,
+				"error", err)
+			continue
+		}
 
-	for index := 0; index < currentCount; index++ {
-		// Capture the current index to avoid closure issues.
-		switchDesktopAction := func(desktop int) func() error {
-			return func() error {
+		// Create the appropriate action based on the binding type
+		var action func() error
+
+		switch binding.Action {
+		case "SwitchDesktop":
+			if len(binding.Params) != 1 {
+				slog.Error("invalid parameters for SwitchDesktop", "params", binding.Params)
+				continue
+			}
+			desktop := parseDesktopNumber(binding.Params[0]) - 1 // Convert to 0-based index
+			action = func() error {
 				dm.SwitchToDesktop(desktop)
-				// Update system tray with current desktop
 				if err := traySvc.UpdateDesktop(desktop + 1); err != nil {
 					slog.Error("failed to update system tray", "error", err)
 				}
 				return nil
 			}
-		}(index)
 
-		moveAndSwitchAction := func(desktop int) func() error {
-			return func() error {
-				// Retrieve the current foreground window from the OS and perform the move and switch.
+		case "MoveWindowToDesktop":
+			if len(binding.Params) != 1 {
+				slog.Error("invalid parameters for MoveWindowToDesktop", "params", binding.Params)
+				continue
+			}
+			desktop := parseDesktopNumber(binding.Params[0]) - 1 // Convert to 0-based index
+			action = func() error {
 				foregroundW := user.GetForegroundWindow()
 				dm.MoveWindowToDesktop(foregroundW, desktop)
 				dm.SwitchToDesktop(desktop)
-				// Update system tray with current desktop
 				if err := traySvc.UpdateDesktop(desktop + 1); err != nil {
 					slog.Error("failed to update system tray", "error", err)
 				}
 				return nil
 			}
-		}(index)
 
+		case "CreateDesktop":
+			action = func() error {
+				dm.CreateNewDesktop()
+				return nil
+			}
+
+		default:
+			slog.Error("unknown action type", "action", binding.Action)
+			continue
+		}
+
+		// Register the binding
 		svc.RegisterKeyBindingActions(
-			shortcut.NewBindingAction([]types.VirtualKey{types.VK_LMENU, desktopKeys[index]}, switchDesktopAction),
-			shortcut.NewBindingAction([]types.VirtualKey{types.VK_LMENU, types.VK_LSHIFT, desktopKeys[index]}, moveAndSwitchAction),
+			shortcut.NewBindingAction(binding.GetVirtualKeys(), action),
 		)
+
+		slog.Debug("registered shortcut",
+			"keys", types.NewKeybinding(binding.GetVirtualKeys()...).PrettyString(),
+			"action", binding.Action,
+			"category", binding.Category)
 	}
+
 	return svc
+}
+
+// parseDesktopNumber safely converts a string parameter to a desktop number
+func parseDesktopNumber(param string) int {
+	num, err := strconv.Atoi(param)
+	if err != nil {
+		slog.Error("failed to parse desktop number", "param", param, "error", err)
+		return 1
+	}
+	return num
 }
 
 // captureEvents centralizes OS signal handling and keyboard event logging.
@@ -144,7 +185,10 @@ func captureEvents(hook *keyboard.Hook) error {
 // and starts the user event loop. This separation of startup functionality enhances testability and maintainability.
 func Run() error {
 	// Load configuration
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfigFromArgs(os.Args)
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
 	config.SetupLogging(cfg)
 
 	// Initialize system tray
