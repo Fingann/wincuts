@@ -3,6 +3,7 @@ module wincuts
 go 1.23.0
 
 require (
+	github.com/chrsm/winapi v0.0.0-20190818225842-ffc924ad0674
 	github.com/moutend/go-hook v0.1.0
 	github.com/stretchr/testify v1.9.0
 )

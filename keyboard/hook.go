@@ -1,11 +1,17 @@
+// Package keyboard abstracts the setup and management of low-level keyboard hooks.
+// We structure this package to isolate system-specific input handling from our core application logic,
+// thereby improving testability and modularity.
+
+// The NewHook function configures a keyboard hook to capture input events essential for key binding operations.
+
 package keyboard
 
 import (
 	"context"
 	"fmt"
-	"sync"
 	"maps"
 	"slices"
+	"sync"
 
 	wtypes "wincuts/keyboard/types"
 
@@ -56,9 +62,11 @@ func (h *Hook) Start() error {
 				// Clean up and exit the goroutine
 				return
 			case k := <-h.lowLevelChan:
+				if k.Message == 0x0312 {
+					fmt.Println("Key kombo")
+				}
 				vCode := wtypes.VirtualKey(k.VKCode)
 				isKeyDown := k.Message == types.WM_KEYDOWN || k.Message == types.WM_SYSKEYDOWN
-			
 
 				event := KeyEvent{
 					PressedKeys: slices.Collect(maps.Keys(h.keyState)),
@@ -87,7 +95,7 @@ func (h *Hook) Stop() error {
 		return err
 	}
 
-	close(h.lowLevelChan) // Close the low-level channel
+	close(h.lowLevelChan)          // Close the low-level channel
 	h.subscriberManager.CloseAll() // Close all subscriber channels
 
 	return nil

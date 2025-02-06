@@ -1,3 +1,5 @@
+github.com/chrsm/winapi v0.0.0-20190818225842-ffc924ad0674 h1:q+1SanY4S7nGV3ftn+6ZHZbcfFhHwVSpNkOiPrVH6Jc=
+github.com/chrsm/winapi v0.0.0-20190818225842-ffc924ad0674/go.mod h1:oYk45fLRO/Wopq8h+fTHqL0/S1b7eWgsNmKoqu5qAKc=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/moutend/go-hook v0.1.0 h1:8jGA7zxtcNmiFrHf+KAGpSBbU99fyY9DS1s38MOBJQU=

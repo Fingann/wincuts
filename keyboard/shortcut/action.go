@@ -25,14 +25,14 @@ func (kba *KeyBindingAction) Match(event keyboard.KeyEvent) bool {
 	return kba.Binding.Match(event.PressedKeys)
 } 
 
-func NewBindingActionFromBinding(binding types.KeyBinding, action KeyBindingFunc) (*KeyBindingAction) {
-	return &KeyBindingAction{
+func NewBindingActionFromBinding(binding types.KeyBinding, action KeyBindingFunc) (KeyBindingAction) {
+	return KeyBindingAction{
 		Binding: binding,
 		Action:      action,
 		onKeyDown: false,
 	}
 }
 
-func NewBindingAction(keys []types.VirtualKey, action KeyBindingFunc) (*KeyBindingAction) {
+func NewBindingAction(keys []types.VirtualKey, action KeyBindingFunc) (KeyBindingAction) {
 	return NewBindingActionFromBinding(types.NewKeybinding(keys...),action)
 }
