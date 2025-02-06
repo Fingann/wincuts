@@ -7,11 +7,13 @@ try {
     # Download latest release info from GitHub
     $repo = "fingann/WinCuts"
     $releases = "https://api.github.com/repos/$repo/releases/latest"
-    $tag = (Invoke-WebRequest $releases -UseBasicParsing | ConvertFrom-Json).tag_name
+    
+    Write-Host "🔍 Fetching latest release info..."
+    $releaseInfo = Invoke-WebRequest $releases -UseBasicParsing | ConvertFrom-Json
+    $tag = $releaseInfo.tag_name
     
     # Download URLs
-    $exeUrl = "https://github.com/$repo/releases/download/$tag/WinCuts.exe"
-    $configUrl = "https://raw.githubusercontent.com/$repo/$tag/default_config.yaml"
+    $exeUrl = $releaseInfo.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -ExpandProperty browser_download_url
     
     Write-Host "🔍 Found latest version: $tag"
     
@@ -44,13 +46,18 @@ try {
     Write-Host "🧹 Cleaning up old files..."
     Remove-Item "$installDir\*" -Force -Recurse -ErrorAction SilentlyContinue
     
-    # Download and install new files
+    # Download and extract release
     Write-Host "⬇️ Downloading latest version..."
-    Invoke-WebRequest $exeUrl -OutFile "$installDir\WinCuts.exe" -UseBasicParsing
+    $zipPath = "$installDir\WinCuts.zip"
+    Invoke-WebRequest $exeUrl -OutFile $zipPath -UseBasicParsing
+    
+    Write-Host "📦 Extracting files..."
+    Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
+    Remove-Item $zipPath
     
     if (-not (Test-Path $configPath)) {
-        Write-Host "⚙️ Downloading default configuration..."
-        Invoke-WebRequest $configUrl -OutFile $configPath -UseBasicParsing
+        Write-Host "⚙️ Creating default configuration..."
+        Copy-Item "$installDir\default_config.yaml" $configPath
         Write-Host "Created default configuration file"
     } else {
         Write-Host "ℹ️ Keeping existing configuration file"
