@@ -44,7 +44,7 @@ jobs:
     - name: Create archive
       run: |
         cd build
-        zip -r WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip WinCuts/
+        zip -r WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip ./
         unzip -l WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip
         
     - name: Create Release
