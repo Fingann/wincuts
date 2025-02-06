@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/signal"
 
+	"wincuts/config"
 	"wincuts/keyboard"
 	"wincuts/keyboard/shortcut"
 	"wincuts/keyboard/types"
+	"wincuts/systray"
 	"wincuts/virtd"
 
 	winapi "github.com/chrsm/winapi"
@@ -62,16 +64,31 @@ func EnsureMinimumDesktops(dm DesktopManager, minCount int) {
 
 // setupKeyBindings registers keyboard shortcuts for switching desktops and moving windows.
 // The use of closures to capture the desktop index prevents common closure pitfalls and links user actions to the intended operations.
-func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager) *shortcut.Service {
+func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager, traySvc *systray.Service) *shortcut.Service {
 	subscription := hook.Subscribe()
 	svc := shortcut.NewService(subscription)
 
-	desktopKeys := []types.VirtualKey{types.VK_1, types.VK_2, types.VK_3, types.VK_4}
-	for index, key := range desktopKeys {
+	// Map number keys 1-9 to virtual desktops
+	desktopKeys := []types.VirtualKey{
+		types.VK_1, types.VK_2, types.VK_3, types.VK_4, types.VK_5,
+		types.VK_6, types.VK_7, types.VK_8, types.VK_9,
+	}
+
+	// Get current desktop count to know how many shortcuts to register
+	currentCount := dm.GetCurrentDesktopCount()
+	if currentCount > len(desktopKeys) {
+		currentCount = len(desktopKeys) // Cap at maximum supported keys
+	}
+
+	for index := 0; index < currentCount; index++ {
 		// Capture the current index to avoid closure issues.
 		switchDesktopAction := func(desktop int) func() error {
 			return func() error {
 				dm.SwitchToDesktop(desktop)
+				// Update system tray with current desktop
+				if err := traySvc.UpdateDesktop(desktop + 1); err != nil {
+					slog.Error("failed to update system tray", "error", err)
+				}
 				return nil
 			}
 		}(index)
@@ -82,13 +99,17 @@ func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager) *shortcut.Service 
 				foregroundW := user.GetForegroundWindow()
 				dm.MoveWindowToDesktop(foregroundW, desktop)
 				dm.SwitchToDesktop(desktop)
+				// Update system tray with current desktop
+				if err := traySvc.UpdateDesktop(desktop + 1); err != nil {
+					slog.Error("failed to update system tray", "error", err)
+				}
 				return nil
 			}
 		}(index)
 
 		svc.RegisterKeyBindingActions(
-			shortcut.NewBindingAction([]types.VirtualKey{types.VK_LMENU, key}, switchDesktopAction),
-			shortcut.NewBindingAction([]types.VirtualKey{types.VK_LMENU, types.VK_LSHIFT, key}, moveAndSwitchAction),
+			shortcut.NewBindingAction([]types.VirtualKey{types.VK_LMENU, desktopKeys[index]}, switchDesktopAction),
+			shortcut.NewBindingAction([]types.VirtualKey{types.VK_LMENU, types.VK_LSHIFT, desktopKeys[index]}, moveAndSwitchAction),
 		)
 	}
 	return svc
@@ -122,10 +143,21 @@ func captureEvents(hook *keyboard.Hook) error {
 // Run aggregates the initialization of system components (desktop environment, keyboard hook, key bindings)
 // and starts the user event loop. This separation of startup functionality enhances testability and maintainability.
 func Run() error {
-	// Enforce that a minimum of 9 desktops are available before proceeding.
+	// Load configuration
+	cfg := config.LoadConfig()
+	config.SetupLogging(cfg)
+
+	// Initialize system tray
+	traySvc, err := systray.NewService(cfg.UI.TrayIcon)
+	if err != nil {
+		return fmt.Errorf("failed to initialize system tray: %w", err)
+	}
+	defer traySvc.Stop()
+
+	// Enforce minimum number of virtual desktops from config
 	dm := VirtdDesktopManager{}
-	EnsureMinimumDesktops(dm, 9)
-	slog.Info("virtual desktops initialized", "count", dm.GetCurrentDesktopCount())
+	EnsureMinimumDesktops(dm, cfg.VirtualDesktops.MinimumCount)
+	slog.Info("virtual desktops initialized", "count", dm.GetCurrentDesktopCount(), "minimum", cfg.VirtualDesktops.MinimumCount)
 
 	// Initialize the keyboard hook; early exit if setup fails to ensure proper system state.
 	hook, err := keyboard.NewHook()
@@ -136,7 +168,7 @@ func Run() error {
 	slog.Info("keyboard hook initialized")
 
 	// Register keyboard shortcuts to facilitate rapid desktop management.
-	keybindService := setupKeyBindings(hook, dm)
+	keybindService := setupKeyBindings(hook, dm, traySvc)
 	keybindService.Start()
 	slog.Info("keyboard shortcuts registered")
 
