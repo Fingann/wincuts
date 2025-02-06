@@ -99,9 +99,11 @@ func captureEvents(hook *keyboard.Hook) error {
 	loggingSubscription := hook.Subscribe()
 	go func() {
 		for ev := range loggingSubscription {
-			if !ev.KeyDown {
-				keyB := types.NewKeybinding(ev.PressedKeys...)
-				fmt.Println("Keys:", keyB.PrettyString())
+			keyB := types.NewKeybinding(ev.PressedKeys...)
+			if ev.KeyDown {
+				fmt.Printf("Key Press   - %s (Current State: %s)\n", ev.KeyCode.KeybindName(), keyB.PrettyString())
+			} else {
+				fmt.Printf("Key Release - %s (Current State: %s)\n", ev.KeyCode.KeybindName(), keyB.PrettyString())
 			}
 		}
 	}()
