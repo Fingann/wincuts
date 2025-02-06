@@ -31,11 +31,12 @@ jobs:
         
     - name: Build
       run: |
-        mkdir -p build/WinCuts
-        go build -o build/WinCuts/WinCuts.exe -ldflags "-s -w -X main.Version=${{ steps.get_version.outputs.VERSION }}"
-        cp config/default_config.yaml build/WinCuts/default_config.yaml
-        ls -la build/WinCuts/
-        ./build/WinCuts/WinCuts.exe -v || true
+        mkdir -p build/
+        go build -o build/WinCuts.exe -ldflags "-s -w -X main.Version=${{ steps.get_version.outputs.VERSION }}"
+        cp default_config.yaml build/default_config.yaml
+        ls -la build/
+        ./build/WinCuts.exe -v || true
+
       env:
         GOOS: windows
         GOARCH: amd64
