@@ -5,9 +5,12 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v4
@@ -22,7 +25,6 @@ jobs:
     - name: Get version
       id: get_version
       run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-      shell: bash
         
     - name: Build
       run: |
@@ -34,8 +36,8 @@ jobs:
         
     - name: Create archive
       run: |
-        Compress-Archive -Path "build/WinCuts.exe", "README.md", "default_config.yaml" -DestinationPath "build/WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip" -Force
-      shell: pwsh
+        cd build
+        zip WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip WinCuts.exe ../README.md ../default_config.yaml
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
