@@ -2,102 +2,71 @@
 
 WinCuts is a lightweight, customizable Windows utility that enhances your virtual desktop experience with powerful keyboard shortcuts and a sleek system tray interface.
 
+## Quick Install 🚀
+
+Open PowerShell and run:
+```powershell
+irm https://raw.githubusercontent.com/yourusername/WinCuts/main/install.ps1 | iex
+```
+
+That's it! For detailed instructions, see [INSTALL.md](INSTALL.md).
+
 ## Features 🌟
 
-- **Intuitive Keyboard Shortcuts**: Quickly switch between virtual desktops and move windows using customizable keyboard combinations
-- **Smart System Tray**: Always know which desktop you're on with our minimalist, modern system tray indicator
-- **Highly Configurable**: Customize everything from keyboard shortcuts to the appearance of the system tray icon
+- **Intuitive Keyboard Shortcuts**: Quickly switch between virtual desktops and move windows
+- **Smart System Tray**: Always know which desktop you're on with our minimalist, modern indicator
+- **Window Management**: Maximize, minimize, or toggle window states with keyboard shortcuts
+- **Highly Configurable**: Customize everything from keyboard shortcuts to the appearance
 - **Resource Efficient**: Built in Go for minimal system impact
 - **Windows Native**: Seamlessly integrates with Windows virtual desktops
 
-## Installation 🚀
+## Default Shortcuts ⌨️
 
-### Prerequisites
+- `Alt + [1-9]`: Switch to desktop 1-9
+- `Alt + Shift + [1-9]`: Move current window to desktop 1-9
+- `Alt + Up`: Maximize current window
+- `Alt + Down`: Minimize current window
+- `Alt + Space`: Toggle window state
 
-- Windows 10 or later
-- Go 1.21 or later (for building from source)
+## Configuration 🔧
 
-### Quick Start
-
-1. Download the latest release from our [Releases](https://github.com/yourusername/WinCuts/releases) page
-2. Extract the zip file to your desired location
-3. Run `WinCuts.exe`
-
-### Building from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/WinCuts.git
-cd WinCuts
-
-# Build the project
-go build
-
-# Run WinCuts
-./WinCuts
-```
-
-## Configuration ⚙️
-
-WinCuts is highly configurable through a YAML configuration file. You can generate a default configuration file with:
-
-```bash
-WinCuts.exe --generate-config config.yaml
-```
-
-### Default Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| Alt + [1-9] | Switch to desktop 1-9 |
-| Alt + Shift + [1-9] | Move current window to desktop 1-9 |
-| Alt + N | Create new desktop |
-
-### Customizing Configuration
-
-The configuration file (`config.yaml`) allows you to customize:
-
+Edit `%APPDATA%\WinCuts\config.yaml` to customize:
 - Keyboard shortcuts
 - System tray appearance
+- Virtual desktop settings
 - Logging levels
-- Minimum number of virtual desktops
 
-Example configuration:
+See [example.yaml](config/example.yaml) for all available options.
 
-```yaml
-logging:
-  level: INFO
-ui:
-  tray_icon:
-    size: 22
-    corner_radius: 4
-    padding: 2
-    bg_opacity: 230
-    bg_color:
-      r: 0
-      g: 120
-      b: 215
-      a: 255
-shortcuts:
-  bindings:
-    - keys: ["LAlt", "1"]
-      action: SwitchDesktop
-      params: ["1"]
-    - keys: ["LAlt", "LShift", "1"]
-      action: MoveWindowToDesktop
-      params: ["1"]
+## Updating ⬆️
+
+Run the installation command again to update to the latest version:
+```powershell
+irm https://raw.githubusercontent.com/yourusername/WinCuts/main/install.ps1 | iex
+```
+Your configuration will be preserved during updates.
+
+## Development 🛠️
+
+### Prerequisites
+- Windows 10 or later
+- Go 1.21 or later
+
+### Building from Source
+```bash
+git clone https://github.com/yourusername/WinCuts.git
+cd WinCuts
+go build
 ```
 
-## Command Line Options 🖥️
-
-- `--config <path>`: Load configuration from specified file
-- `--generate-config <path>`: Generate default configuration file
-- `--log-level <level>`: Set logging level (DEBUG, INFO, WARN, ERROR)
-- `--min-desktops <number>`: Set minimum number of virtual desktops
+### Running Tests
+```bash
+go test ./...
+```
 
 ## Contributing 🤝
 
-We welcome contributions! Whether it's bug reports, feature requests, or code contributions, please feel free to help make WinCuts better.
+We welcome contributions! Whether it's bug reports, feature requests, or code contributions:
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
@@ -105,12 +74,13 @@ We welcome contributions! Whether it's bug reports, feature requests, or code co
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-### Development Setup
+## Support 💪
 
-1. Install Go 1.21 or later
-2. Clone the repository
-3. Install dependencies: `go mod download`
-4. Run tests: `go test ./...`
+If you find WinCuts useful, please:
+- Star the repository ⭐
+- Report bugs 🐛
+- Contribute code or documentation 📝
+- Share with others 🌟
 
 ## License 📄
 
@@ -120,14 +90,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Thanks to all contributors who have helped shape WinCuts
 - Built with Go and ❤️
-
-## Support 💪
-
-If you find WinCuts useful, please consider:
-- Starring the repository
-- Reporting bugs
-- Contributing code or documentation
-- Sharing with others
 
 ## Roadmap 🗺️
 

@@ -46,4 +46,13 @@ jobs:
           build/WinCuts-*.zip
         draft: false
         prerelease: false
-        generate_release_notes: true 
+        generate_release_notes: true
+        body: |
+          ## Installation
+          See [INSTALL.md](INSTALL.md) for detailed installation instructions.
+
+          ## Quick Install (Recommended)
+          Open PowerShell and run:
+          ```powershell
+          irm https://raw.githubusercontent.com/fingann/WinCuts/main/install.ps1 | iex
+          ```
