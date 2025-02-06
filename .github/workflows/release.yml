@@ -29,11 +29,24 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "Building version: $VERSION"
         
+    - name: Download VirtualDesktopAccessor
+      shell: pwsh
+      run: |
+        $vdaRepo = "Ciantic/VirtualDesktopAccessor"
+        $vdaReleases = "https://api.github.com/repos/$vdaRepo/releases/latest"
+        $vdaInfo = Invoke-RestMethod -Uri $vdaReleases
+        $vdaUrl = $vdaInfo.assets | Where-Object { $_.name -like "*x64.dll" } | Select-Object -ExpandProperty browser_download_url
+        
+        Write-Host "Downloading VirtualDesktopAccessor.dll from: $vdaUrl"
+        Invoke-WebRequest -Uri $vdaUrl -OutFile "VirtualDesktopAccessor.dll"
+        
     - name: Build
+      shell: pwsh
       run: |
         mkdir -p build
         go build -o build/WinCuts.exe -ldflags "-s -w -X main.Version=${{ steps.get_version.outputs.VERSION }}"
         cp default_config.yaml build/default_config.yaml
+        cp VirtualDesktopAccessor.dll build/VirtualDesktopAccessor.dll
         echo "Build contents:"
         ls -la build/
         echo "Testing version:"
@@ -47,7 +60,7 @@ jobs:
         cd build
         echo "Creating archive with:"
         ls -la
-        zip WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip WinCuts.exe default_config.yaml
+        zip WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip WinCuts.exe default_config.yaml VirtualDesktopAccessor.dll
         echo "Archive contents:"
         unzip -l WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip
         

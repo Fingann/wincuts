@@ -67,13 +67,19 @@ try {
     Write-Host "📋 Extracted files:"
     $extractedFiles | ForEach-Object { Write-Host "   - $($_.FullName)" }
     
-    # Find and copy the executable
+    # Find and copy the executable and DLL
     $exeFile = Get-ChildItem -Path $tempDir -Filter "WinCuts.exe" -Recurse | Select-Object -First 1
     if (-not $exeFile) {
         throw "WinCuts.exe not found in extracted files"
     }
     
+    $dllFile = Get-ChildItem -Path $tempDir -Filter "VirtualDesktopAccessor.dll" -Recurse | Select-Object -First 1
+    if (-not $dllFile) {
+        throw "VirtualDesktopAccessor.dll not found in extracted files"
+    }
+    
     Copy-Item $exeFile.FullName -Destination "$installDir\WinCuts.exe"
+    Copy-Item $dllFile.FullName -Destination "$installDir\VirtualDesktopAccessor.dll"
     
     # Find and handle config
     $defaultConfig = Get-ChildItem -Path $tempDir -Filter "default_config.yaml" -Recurse | Select-Object -First 1
@@ -99,11 +105,12 @@ try {
     $shortcut = $shell.CreateShortcut($startupPath)
     $shortcut.TargetPath = "$installDir\WinCuts.exe"
     $shortcut.Arguments = "-background"
+    $shortcut.WorkingDirectory = $installDir
     $shortcut.Save()
     
     # Start WinCuts
     Write-Host "▶️ Starting WinCuts..."
-    Start-Process -FilePath "$installDir\WinCuts.exe" -ArgumentList "-background"
+    Start-Process -FilePath "$installDir\WinCuts.exe" -ArgumentList "-background" -WorkingDirectory $installDir
     
     Write-Host @"
     

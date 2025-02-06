@@ -3,6 +3,8 @@
 package virtd
 
 import (
+	"os"
+	"path/filepath"
 	"syscall"
 	"unsafe"
 
@@ -10,7 +12,16 @@ import (
 )
 
 var (
-	vdapi = syscall.NewLazyDLL("VirtualDesktopAccessor.dll")
+	// Get the executable's directory to find the DLL
+	execDir = func() string {
+		exe, err := os.Executable()
+		if err != nil {
+			return "."
+		}
+		return filepath.Dir(exe)
+	}()
+
+	vdapi = syscall.NewLazyDLL(filepath.Join(execDir, "VirtualDesktopAccessor.dll"))
 
 	pGetCurrentDesktopNumber         = vdapi.NewProc("GetCurrentDesktopNumber")
 	pGetDesktopCount                 = vdapi.NewProc("GetDesktopCount")
