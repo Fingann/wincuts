@@ -20,6 +20,7 @@ try {
     # Installation directories
     $installDir = "$env:LOCALAPPDATA\WinCuts"
     $configDir = "$env:APPDATA\WinCuts"
+    $tempDir = "$env:TEMP\WinCuts_Install"
     
     Write-Host "📦 Installing WinCuts..."
     
@@ -34,6 +35,7 @@ try {
     # Create directories
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
     
     # Backup existing config if it exists
     $configPath = "$configDir\config.yaml"
@@ -45,15 +47,18 @@ try {
     # Clean up old files
     Write-Host "🧹 Cleaning up old files..."
     Remove-Item "$installDir\*" -Force -Recurse -ErrorAction SilentlyContinue
+    Remove-Item "$tempDir\*" -Force -Recurse -ErrorAction SilentlyContinue
     
     # Download and extract release
     Write-Host "⬇️ Downloading latest version..."
-    $zipPath = "$installDir\WinCuts.zip"
+    $zipPath = "$tempDir\WinCuts.zip"
     Invoke-WebRequest $exeUrl -OutFile $zipPath -UseBasicParsing
     
     Write-Host "📦 Extracting files..."
-    Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
-    Remove-Item $zipPath
+    Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
+    
+    # Copy files to install directory
+    Copy-Item "$tempDir\WinCuts\*" -Destination $installDir -Recurse
     
     if (-not (Test-Path $configPath)) {
         Write-Host "⚙️ Creating default configuration..."
@@ -62,6 +67,9 @@ try {
     } else {
         Write-Host "ℹ️ Keeping existing configuration file"
     }
+    
+    # Clean up temp files
+    Remove-Item $tempDir -Recurse -Force
     
     # Create or update shortcut in startup folder
     $startupPath = [System.IO.Path]::Combine([Environment]::GetFolderPath("Startup"), "WinCuts.lnk")

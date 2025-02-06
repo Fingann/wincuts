@@ -24,12 +24,18 @@ jobs:
         
     - name: Get version
       id: get_version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "Building version: $VERSION"
         
     - name: Build
       run: |
-        mkdir build
-        go build -o build/WinCuts.exe -ldflags "-s -w -X main.Version=${{ steps.get_version.outputs.VERSION }}"
+        mkdir -p build/WinCuts
+        go build -o build/WinCuts/WinCuts.exe -ldflags "-s -w -X main.Version=${{ steps.get_version.outputs.VERSION }}"
+        cp config/default_config.yaml build/WinCuts/default_config.yaml
+        ls -la build/WinCuts/
+        ./build/WinCuts/WinCuts.exe -v || true
       env:
         GOOS: windows
         GOARCH: amd64
@@ -37,7 +43,8 @@ jobs:
     - name: Create archive
       run: |
         cd build
-        zip WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip WinCuts.exe ../README.md ../default_config.yaml
+        zip -r WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip WinCuts/
+        unzip -l WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
