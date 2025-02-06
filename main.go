@@ -3,16 +3,20 @@
 package main
 
 import (
-	"log"
+	"log/slog"
+	"os"
 	"wincuts/app"
+	"wincuts/config"
 )
 
 // main is the entry point of the application.
 func main() {
-	log.SetFlags(0)
-	log.SetPrefix("error: ")
+	// Load and setup configuration
+	cfg := config.LoadConfig()
+	config.SetupLogging(cfg)
 
 	if err := app.Run(); err != nil {
-		log.Fatal(err)
+		slog.Error("application error", "error", err)
+		os.Exit(1)
 	}
 }

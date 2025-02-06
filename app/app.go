@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 
@@ -100,19 +101,21 @@ func captureEvents(hook *keyboard.Hook) error {
 	go func() {
 		for ev := range loggingSubscription {
 			keyB := types.NewKeybinding(ev.PressedKeys...)
+
+			// Simple event logging
 			if ev.KeyDown {
-				fmt.Printf("Key Press   - %s (Current State: %s)\n", ev.KeyCode.KeybindName(), keyB.PrettyString())
+				slog.Debug("key press", "key", ev.KeyCode.KeybindName(), "state", keyB.PrettyString())
 			} else {
-				fmt.Printf("Key Release - %s (Current State: %s)\n", ev.KeyCode.KeybindName(), keyB.PrettyString())
+				slog.Debug("key release", "key", ev.KeyCode.KeybindName(), "state", keyB.PrettyString())
 			}
 		}
 	}()
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
-	fmt.Println("start capturing keyboard input")
+	slog.Info("started")
 	<-signalChan
-	fmt.Println("Received shutdown signal")
+	slog.Info("stopping")
 	return nil
 }
 
@@ -122,6 +125,7 @@ func Run() error {
 	// Enforce that a minimum of 9 desktops are available before proceeding.
 	dm := VirtdDesktopManager{}
 	EnsureMinimumDesktops(dm, 9)
+	slog.Info("virtual desktops initialized", "count", dm.GetCurrentDesktopCount())
 
 	// Initialize the keyboard hook; early exit if setup fails to ensure proper system state.
 	hook, err := keyboard.NewHook()
@@ -129,10 +133,12 @@ func Run() error {
 		return fmt.Errorf("failed to create keyboard hook: %w", err)
 	}
 	hook.Start()
+	slog.Info("keyboard hook initialized")
 
 	// Register keyboard shortcuts to facilitate rapid desktop management.
 	keybindService := setupKeyBindings(hook, dm)
 	keybindService.Start()
+	slog.Info("keyboard shortcuts registered")
 
 	// Start capturing events; this blocks until an OS shutdown signal is received, ensuring graceful termination.
 	return captureEvents(hook)
