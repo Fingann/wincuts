@@ -29,19 +29,7 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "Building version: $VERSION"
         
-    - name: Download VirtualDesktopAccessor
-      shell: pwsh
-      run: |
-        $vdaRepo = "Ciantic/VirtualDesktopAccessor"
-        $vdaReleases = "https://api.github.com/repos/$vdaRepo/releases/latest"
-        $vdaInfo = Invoke-RestMethod -Uri $vdaReleases
-        $vdaUrl = $vdaInfo.assets | Where-Object { $_.name -like "*x64.dll" } | Select-Object -ExpandProperty browser_download_url
-        
-        Write-Host "Downloading VirtualDesktopAccessor.dll from: $vdaUrl"
-        Invoke-WebRequest -Uri $vdaUrl -OutFile "VirtualDesktopAccessor.dll"
-        
     - name: Build
-      shell: pwsh
       run: |
         mkdir -p build
         go build -o build/WinCuts.exe -ldflags "-s -w -X main.Version=${{ steps.get_version.outputs.VERSION }}"
