@@ -15,7 +15,12 @@ try {
     # Download URLs
     $exeUrl = $releaseInfo.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -ExpandProperty browser_download_url
     
+    if (-not $exeUrl) {
+        throw "No release asset found matching *.zip"
+    }
+    
     Write-Host "🔍 Found latest version: $tag"
+    Write-Host "📥 Download URL: $exeUrl"
     
     # Installation directories
     $installDir = "$env:LOCALAPPDATA\WinCuts"
@@ -57,12 +62,28 @@ try {
     Write-Host "📦 Extracting files..."
     Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
     
-    # Copy files to install directory
-    Copy-Item "$tempDir\WinCuts.exe" -Destination $installDir
+    # Verify extracted files
+    $extractedFiles = Get-ChildItem -Path $tempDir -Recurse
+    Write-Host "📋 Extracted files:"
+    $extractedFiles | ForEach-Object { Write-Host "   - $($_.FullName)" }
+    
+    # Find and copy the executable
+    $exeFile = Get-ChildItem -Path $tempDir -Filter "WinCuts.exe" -Recurse | Select-Object -First 1
+    if (-not $exeFile) {
+        throw "WinCuts.exe not found in extracted files"
+    }
+    
+    Copy-Item $exeFile.FullName -Destination "$installDir\WinCuts.exe"
+    
+    # Find and handle config
+    $defaultConfig = Get-ChildItem -Path $tempDir -Filter "default_config.yaml" -Recurse | Select-Object -First 1
+    if (-not $defaultConfig) {
+        throw "default_config.yaml not found in extracted files"
+    }
     
     if (-not (Test-Path $configPath)) {
         Write-Host "⚙️ Creating default configuration..."
-        Copy-Item "$tempDir\default_config.yaml" $configPath
+        Copy-Item $defaultConfig.FullName $configPath
         Write-Host "Created default configuration file"
     } else {
         Write-Host "ℹ️ Keeping existing configuration file"
@@ -71,26 +92,26 @@ try {
     # Clean up temp files
     Remove-Item $tempDir -Recurse -Force
     
-    # Create or update shortcut in startup folder
-    $startupPath = [System.IO.Path]::Combine([Environment]::GetFolderPath("Startup"), "WinCuts.lnk")
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($startupPath)
-    $shortcut.TargetPath = "$installDir\WinCuts.exe"
-    $shortcut.Save()
+    # Install and start the service
+    Write-Host "🔧 Installing Windows service..."
+    & "$installDir\WinCuts.exe" -install
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to install service"
+    }
     
-    # Start WinCuts
-    Start-Process -FilePath "$installDir\WinCuts.exe"
+    Write-Host "▶️ Starting service..."
+    Start-Service -Name "WinCuts"
     
     Write-Host @"
     
 ✅ WinCuts $tag installed successfully!
    - Location: $installDir
    - Config: $configPath
-   - Autostart: Enabled
+   - Service: Installed and running
 
 🔄 Update Summary:
    - Old version stopped and removed
-   - New version installed
+   - New version installed as Windows service
    - Configuration preserved
    $(if (Test-Path "$configPath.backup") {"   - Backup created: $configPath.backup"})
 
@@ -100,14 +121,23 @@ try {
    - Alt + Up/Down: Maximize/Minimize
    - Alt + Space: Toggle window state
 
-🚀 WinCuts is now running!
+🚀 WinCuts service is now running!
 
-💡 To uninstall, run in PowerShell:
-   Remove-Item '$installDir','$configDir','$startupPath' -Recurse -Force
+💡 To uninstall, run:
+   1. Stop-Service WinCuts
+   2. & '$installDir\WinCuts.exe' -uninstall
+   3. Remove-Item '$installDir','$configDir' -Recurse -Force
 "@
 
 } catch {
     Write-Host "❌ Installation failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Debug information:" -ForegroundColor Yellow
+    Write-Host "  Temp directory contents (if exists):" -ForegroundColor Yellow
+    if (Test-Path $tempDir) {
+        Get-ChildItem -Path $tempDir -Recurse | ForEach-Object { Write-Host "   - $($_.FullName)" }
+    } else {
+        Write-Host "   Temp directory does not exist"
+    }
     Write-Host "Please report this issue at: https://github.com/$repo/issues" -ForegroundColor Yellow
     exit 1
 } 
