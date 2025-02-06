@@ -60,4 +60,4 @@ Remove-Item "$env:LOCALAPPDATA\WinCuts","$env:APPDATA\WinCuts","$env:APPDATA\Mic
 
 ## Troubleshooting
 - If the system tray icon doesn't appear, check the Windows Event Viewer for errors
-- For support, please [open an issue](https://github.com/yourusername/WinCuts/issues) 
+- For support, please [open an issue](https://github.com//WinCuts/issues) 

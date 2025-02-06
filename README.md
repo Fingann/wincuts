@@ -6,7 +6,7 @@ WinCuts is a lightweight, customizable Windows utility that enhances your virtua
 
 Open PowerShell and run:
 ```powershell
-irm https://raw.githubusercontent.com/yourusername/WinCuts/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/fingann/WinCuts/main/install.ps1 | iex
 ```
 
 That's it! For detailed instructions, see [INSTALL.md](INSTALL.md).
@@ -42,7 +42,7 @@ See [example.yaml](config/example.yaml) for all available options.
 
 Run the installation command again to update to the latest version:
 ```powershell
-irm https://raw.githubusercontent.com/yourusername/WinCuts/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/fingann/WinCuts/main/install.ps1 | iex
 ```
 Your configuration will be preserved during updates.
 
@@ -54,7 +54,7 @@ Your configuration will be preserved during updates.
 
 ### Building from Source
 ```bash
-git clone https://github.com/yourusername/WinCuts.git
+git clone https://github.com/fingann/WinCuts.git
 cd WinCuts
 go build
 ```

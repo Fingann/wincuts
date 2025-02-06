@@ -5,7 +5,7 @@ try {
     $ErrorActionPreference = "Stop"
 
     # Download latest release info from GitHub
-    $repo = "yourusername/WinCuts"
+    $repo = "fingann/WinCuts"
     $releases = "https://api.github.com/repos/$repo/releases/latest"
     $tag = (Invoke-WebRequest $releases -UseBasicParsing | ConvertFrom-Json).tag_name
     
