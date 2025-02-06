@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"os"
 	"wincuts/app"
+	"wincuts/background"
 	"wincuts/config"
-	"wincuts/service"
 )
 
 // Version is set during build using -ldflags
@@ -18,35 +18,14 @@ var Version = "development"
 // main is the entry point of the application.
 func main() {
 	// Parse command line flags
-	isService := flag.Bool("service", false, "Run as Windows service")
-	installService := flag.Bool("install", false, "Install Windows service")
-	uninstallService := flag.Bool("uninstall", false, "Uninstall Windows service")
-	debug := flag.Bool("debug", false, "Run in debug mode")
 	showVersion := flag.Bool("v", false, "Show version")
+	noWindow := flag.Bool("background", true, "Run in background mode without a window")
+	debug := flag.Bool("debug", false, "Run in debug mode")
 	flag.Parse()
 
 	// Check for version flag
 	if *showVersion {
 		fmt.Printf("WinCuts %s\n", Version)
-		os.Exit(0)
-	}
-
-	// Handle service installation/uninstallation
-	if *installService {
-		if err := service.InstallService(os.Args[0]); err != nil {
-			slog.Error("failed to install service", "error", err)
-			os.Exit(1)
-		}
-		fmt.Println("Service installed successfully")
-		os.Exit(0)
-	}
-
-	if *uninstallService {
-		if err := service.UninstallService(); err != nil {
-			slog.Error("failed to uninstall service", "error", err)
-			os.Exit(1)
-		}
-		fmt.Println("Service uninstalled successfully")
 		os.Exit(0)
 	}
 
@@ -60,16 +39,16 @@ func main() {
 
 	slog.Info("starting WinCuts", "version", Version)
 
-	// Check if we should run as a service
-	if *isService {
-		if err := service.RunAsService(*debug); err != nil {
-			slog.Error("service error", "error", err)
+	// Run in background mode by default unless debug is enabled
+	if *noWindow && !*debug {
+		if err := background.RunInBackground(); err != nil {
+			slog.Error("background error", "error", err)
 			os.Exit(1)
 		}
 		return
 	}
 
-	// Run as a normal application
+	// Run as a normal application with console window
 	if err := app.Run(); err != nil {
 		slog.Error("application error", "error", err)
 		os.Exit(1)

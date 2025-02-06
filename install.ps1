@@ -92,26 +92,29 @@ try {
     # Clean up temp files
     Remove-Item $tempDir -Recurse -Force
     
-    # Install and start the service
-    Write-Host "🔧 Installing Windows service..."
-    & "$installDir\WinCuts.exe" -install
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to install service"
-    }
+    # Create shortcut in startup folder
+    Write-Host "🔧 Creating startup shortcut..."
+    $startupPath = [System.IO.Path]::Combine([Environment]::GetFolderPath("Startup"), "WinCuts.lnk")
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($startupPath)
+    $shortcut.TargetPath = "$installDir\WinCuts.exe"
+    $shortcut.Arguments = "-background"
+    $shortcut.Save()
     
-    Write-Host "▶️ Starting service..."
-    Start-Service -Name "WinCuts"
+    # Start WinCuts
+    Write-Host "▶️ Starting WinCuts..."
+    Start-Process -FilePath "$installDir\WinCuts.exe" -ArgumentList "-background"
     
     Write-Host @"
     
 ✅ WinCuts $tag installed successfully!
    - Location: $installDir
    - Config: $configPath
-   - Service: Installed and running
+   - Autostart: Enabled (runs in background)
 
 🔄 Update Summary:
    - Old version stopped and removed
-   - New version installed as Windows service
+   - New version installed
    - Configuration preserved
    $(if (Test-Path "$configPath.backup") {"   - Backup created: $configPath.backup"})
 
@@ -121,12 +124,10 @@ try {
    - Alt + Up/Down: Maximize/Minimize
    - Alt + Space: Toggle window state
 
-🚀 WinCuts service is now running!
+🚀 WinCuts is now running in the background!
 
-💡 To uninstall, run:
-   1. Stop-Service WinCuts
-   2. & '$installDir\WinCuts.exe' -uninstall
-   3. Remove-Item '$installDir','$configDir' -Recurse -Force
+💡 To uninstall, run in PowerShell:
+   Remove-Item '$installDir','$configDir','$startupPath' -Recurse -Force
 "@
 
 } catch {
