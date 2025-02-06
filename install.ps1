@@ -58,11 +58,11 @@ try {
     Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
     
     # Copy files to install directory
-    Copy-Item "$tempDir\WinCuts\*" -Destination $installDir -Recurse
+    Copy-Item "$tempDir\WinCuts.exe" -Destination $installDir
     
     if (-not (Test-Path $configPath)) {
         Write-Host "⚙️ Creating default configuration..."
-        Copy-Item "$installDir\default_config.yaml" $configPath
+        Copy-Item "$tempDir\default_config.yaml" $configPath
         Write-Host "Created default configuration file"
     } else {
         Write-Host "ℹ️ Keeping existing configuration file"

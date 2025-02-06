@@ -31,12 +31,13 @@ jobs:
         
     - name: Build
       run: |
-        mkdir -p build/
+        mkdir -p build
         go build -o build/WinCuts.exe -ldflags "-s -w -X main.Version=${{ steps.get_version.outputs.VERSION }}"
         cp default_config.yaml build/default_config.yaml
+        echo "Build contents:"
         ls -la build/
+        echo "Testing version:"
         ./build/WinCuts.exe -v || true
-
       env:
         GOOS: windows
         GOARCH: amd64
@@ -44,7 +45,10 @@ jobs:
     - name: Create archive
       run: |
         cd build
-        zip -r WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip ./
+        echo "Creating archive with:"
+        ls -la
+        zip WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip WinCuts.exe default_config.yaml
+        echo "Archive contents:"
         unzip -l WinCuts-${{ steps.get_version.outputs.VERSION }}-windows-amd64.zip
         
     - name: Create Release
@@ -57,9 +61,6 @@ jobs:
         generate_release_notes: true
         body: |
           ## Installation
-          See [INSTALL.md](INSTALL.md) for detailed installation instructions.
-
-          ## Quick Install (Recommended)
           Open PowerShell and run:
           ```powershell
           irm https://raw.githubusercontent.com/fingann/WinCuts/main/install.ps1 | iex
