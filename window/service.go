@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"unsafe"
 
@@ -22,16 +21,43 @@ const (
 	WS_EX_TOOLWINDOW = 0x00000080
 	WS_MINIMIZE      = 0x00020000
 	WS_MAXIMIZE      = 0x00010000
+	WS_DISABLED      = 0x08000000
+
+	WS_EX_NOACTIVATE = 0x08000000
+	WS_EX_LAYERED    = 0x00080000
+	// ShowWindow commands
+	SW_HIDE            = 0
+	SW_SHOW            = 5
+	SW_MINIMIZE        = 6
+	SW_SHOWMINNOACTIVE = 7
+	SW_SHOWNA          = 8
 
 	// SetWindowPos flags
-	SWP_NOMOVE       = 0x0002
-	SWP_NOSIZE       = 0x0001
-	SWP_NOZORDER     = 0x0004
-	SWP_FRAMECHANGED = 0x0020
+	SWP_NOMOVE         = 0x0002
+	SWP_NOSIZE         = 0x0001
+	SWP_NOZORDER       = 0x0004
+	SWP_FRAMECHANGED   = 0x0020
+	SWP_SHOWWINDOW     = 0x0040
+	SWP_HIDEWINDOW     = 0x0080
+	SWP_NOACTIVATE     = 0x0010
+	SWP_NOOWNERZORDER  = 0x0200
+	SWP_NOSENDCHANGING = 0x0400
 
 	// GetWindowLongPtr indexes using two's complement
 	GWL_STYLE_PTR   = ^uintptr(15) // -16 in two's complement
 	GWL_EXSTYLE_PTR = ^uintptr(19) // -20 in two's complement
+
+	// Window property names
+	PROP_DESKTOP_NUMBER   = "WinCuts_DesktopNumber"
+	PROP_ORIGINAL_STYLE   = "WinCuts_OriginalStyle"
+	PROP_ORIGINAL_EXSTYLE = "WinCuts_OriginalExStyle"
+
+	// Shell window classes
+	SHELL_TRAY_WND = "Shell_TrayWnd"
+	SHELL_DEFVIEW  = "SHELLDLL_DefView"
+
+	// GetWindow constants
+	GW_OWNER = 4
 )
 
 // GetWindowLongPtrIndex represents the index values for GetWindowLongPtr
@@ -72,6 +98,9 @@ type Service struct {
 	getWindowText          *windows.LazyProc
 	isWindowVisible        *windows.LazyProc
 	getWindowDesktopNumber *windows.LazyProc
+	setProp                *windows.LazyProc
+	getProp                *windows.LazyProc
+	removeProp             *windows.LazyProc
 }
 
 // NewService creates a new window management service
@@ -112,6 +141,9 @@ func NewService() (*Service, error) {
 		getWindowText:          user32.NewProc("GetWindowTextW"),
 		isWindowVisible:        user32.NewProc("IsWindowVisible"),
 		getWindowDesktopNumber: vdapi.NewProc("GetWindowDesktopNumber"),
+		setProp:                user32.NewProc("SetPropW"),
+		getProp:                user32.NewProc("GetPropW"),
+		removeProp:             user32.NewProc("RemovePropW"),
 	}, nil
 }
 
@@ -141,6 +173,58 @@ func (s *Service) IsWindowVisible(hwnd syscall.Handle) bool {
 	return ret != 0
 }
 
+// getClassName gets the class name of a window
+func (s *Service) getClassName(hwnd syscall.Handle) string {
+	var className [256]uint16
+	ret, _, _ := s.user32.NewProc("GetClassNameW").Call(
+		uintptr(hwnd),
+		uintptr(unsafe.Pointer(&className[0])),
+		uintptr(len(className)),
+	)
+	if ret == 0 {
+		return ""
+	}
+	return windows.UTF16ToString(className[:])
+}
+
+// getWindow gets a window handle by command
+func (s *Service) getWindow(hwnd syscall.Handle, cmd uint32) syscall.Handle {
+	ret, _, _ := s.user32.NewProc("GetWindow").Call(
+		uintptr(hwnd),
+		uintptr(cmd),
+	)
+	return syscall.Handle(ret)
+}
+
+// isMainWindow checks if a window is a main window
+func (s *Service) isMainWindow(hwnd syscall.Handle) bool {
+	// Check if window has an owner
+	owner := s.getWindow(hwnd, GW_OWNER)
+	if owner != 0 {
+		return false
+	}
+
+	// Get window styles
+	style, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_STYLE_PTR)
+	exStyle, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_EXSTYLE_PTR)
+
+	// Check if it's visible or an app window
+	isVisible := (style & WS_VISIBLE) != 0
+	isAppWindow := (exStyle & WS_EX_APPWINDOW) != 0
+	isTool := (exStyle & WS_EX_TOOLWINDOW) != 0
+
+	// Get class name to check for special windows
+	className := s.getClassName(hwnd)
+	isShellWindow := className == SHELL_TRAY_WND || className == SHELL_DEFVIEW
+
+	// Main window criteria:
+	// 1. No owner (top-level window)
+	// 2. Either visible or explicitly marked as app window
+	// 3. Not a tool window unless explicitly marked as app window
+	// 4. Not a shell/system window
+	return (isVisible || isAppWindow) && (!isTool || isAppWindow) && !isShellWindow
+}
+
 // GetWindowsOnDesktop returns all windows on the specified virtual desktop
 // desktopNum is 1-based (as shown in Windows UI)
 func (s *Service) GetWindowsOnDesktop(desktopNum int) ([]WindowInfo, error) {
@@ -158,46 +242,67 @@ func (s *Service) GetWindowsOnDesktop(desktopNum int) ([]WindowInfo, error) {
 			return 1 // Skip windows with no title
 		}
 
-		// Get window styles
-		style, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_STYLE_PTR)
-		exStyle, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_EXSTYLE_PTR)
+		// Check if this is one of our hidden windows first
+		if s.isOurHiddenWindow(hwnd) {
+			storedDesktop, err := s.getWindowProp(hwnd, PROP_DESKTOP_NUMBER)
+			if err == nil && int(storedDesktop) == zeroBasedDesktop {
+				// Get window states for our hidden window
+				style, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_STYLE_PTR)
+				isMinimized := (style & WS_MINIMIZE) != 0
+				isMaximized := (style & WS_MAXIMIZE) != 0
 
-		// Check window states
-		isVisible := s.IsWindowVisible(hwnd)
-		isMinimized := (style & WS_MINIMIZE) != 0
-		isMaximized := (style & WS_MAXIMIZE) != 0
-		isTool := (exStyle & WS_EX_TOOLWINDOW) != 0
-
-		// Check if window is on the requested desktop
-		windowDesktop := s.GetWindowDesktopNumber(hwnd)
-
-		// Skip if not on the requested desktop (compare with 0-based index)
-		if windowDesktop != zeroBasedDesktop {
+				windows = append(windows, WindowInfo{
+					Handle:      hwnd,
+					Title:       title,
+					DesktopNum:  int(storedDesktop) + 1,
+					IsVisible:   false,
+					IsMinimized: isMinimized,
+					IsMaximized: isMaximized,
+				})
+				fmt.Printf("  Found hidden window: %s (hwnd: %x, desktop: %d)\n", title, hwnd, int(storedDesktop)+1)
+			}
 			return 1
 		}
 
-		// Skip only system tool windows, not our hidden windows
-		if isTool && title != "" && !strings.Contains(title, "WinCuts") {
-			// Check if this is a window we hid (it will have both TOOLWINDOW and APPWINDOW)
-			isApp := (exStyle & WS_EX_APPWINDOW) != 0
-			if !isApp {
-				return 1 // Skip only if it's a real tool window
-			}
+		// For visible windows, check if it's a main window
+		if !s.isMainWindow(hwnd) {
+			return 1
 		}
+
+		// Check desktop number for visible windows
+		windowDesktop := s.GetWindowDesktopNumber(hwnd)
+		// If the window is not on the desktop we are looking for, skip it
+		// some windows are not on any desktop and will return 4294967295
+		if windowDesktop != zeroBasedDesktop {  
+			return 1
+		}
+
+		// Get window states
+		style, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_STYLE_PTR)
+		isVisible := s.IsWindowVisible(hwnd)
+		isMinimized := (style & WS_MINIMIZE) != 0
+		isMaximized := (style & WS_MAXIMIZE) != 0
 
 		windows = append(windows, WindowInfo{
 			Handle:      hwnd,
 			Title:       title,
-			DesktopNum:  windowDesktop + 1, // Store 1-based desktop number
+			DesktopNum:  windowDesktop + 1,
 			IsVisible:   isVisible,
 			IsMinimized: isMinimized,
 			IsMaximized: isMaximized,
 		})
+		fmt.Printf("  Added window: %s (hwnd: %x, desktop: %d)\n", title, hwnd, windowDesktop+1)
 		return 1
 	})
 
 	s.enumWindows.Call(callback, 0)
 	return windows, nil
+}
+
+// isOurHiddenWindow checks if this is a window that we've hidden
+func (s *Service) isOurHiddenWindow(hwnd syscall.Handle) bool {
+	_, err := s.getWindowProp(hwnd, PROP_DESKTOP_NUMBER)
+	return err == nil
 }
 
 // FindWindow finds a window by its title
@@ -215,36 +320,106 @@ func (s *Service) FindWindow(title string) (syscall.Handle, error) {
 	return syscall.Handle(hwnd), nil
 }
 
+// setWindowProp sets a window property
+func (s *Service) setWindowProp(hwnd syscall.Handle, name string, value uintptr) error {
+	namePtr, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return fmt.Errorf("failed to convert property name: %w", err)
+	}
+
+	ret, _, err := s.setProp.Call(
+		uintptr(hwnd),
+		uintptr(unsafe.Pointer(namePtr)),
+		value,
+	)
+	if ret == 0 {
+		return fmt.Errorf("failed to set window property: %w", err)
+	}
+	return nil
+}
+
+// getWindowProp gets a window property
+func (s *Service) getWindowProp(hwnd syscall.Handle, name string) (uintptr, error) {
+	namePtr, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return 0, fmt.Errorf("failed to convert property name: %w", err)
+	}
+
+	ret, _, err := s.getProp.Call(
+		uintptr(hwnd),
+		uintptr(unsafe.Pointer(namePtr)),
+	)
+	if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
+		return 0, fmt.Errorf("failed to get window property: %w", err)
+	}
+	return ret, nil
+}
+
+// removeWindowProp removes a window property
+func (s *Service) removeWindowProp(hwnd syscall.Handle, name string) error {
+	namePtr, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return fmt.Errorf("failed to convert property name: %w", err)
+	}
+
+	_, _, err = s.removeProp.Call(
+		uintptr(hwnd),
+		uintptr(unsafe.Pointer(namePtr)),
+	)
+	if err != nil && err != windows.ERROR_SUCCESS {
+		return fmt.Errorf("failed to remove window property: %w", err)
+	}
+	return nil
+}
+
 // SetWindowVisibility changes the window visibility state
 func (s *Service) SetWindowVisibility(hwnd syscall.Handle, hide bool) error {
 	title, _ := s.GetWindowTitle(hwnd)
 	windowDesktop := s.GetWindowDesktopNumber(hwnd)
 
 	if hide {
-		fmt.Printf("Attempting to hide taskbar icon: '%s' (hwnd: %x, desktop: %d)\n", title, hwnd, windowDesktop+1)
+		fmt.Printf("Attempting to hide window: '%s' (hwnd: %x, desktop: %d)\n", title, hwnd, windowDesktop+1)
 
-		// Get current extended style
-		ret, _, err := s.getWinLongPtr.Call(uintptr(hwnd), GWL_EXSTYLE_PTR)
+		// Get current styles and save them as properties
+		var ret uintptr
+		var err error
+		ret, _, err = s.getWinLongPtr.Call(uintptr(hwnd), GWL_EXSTYLE_PTR)
 		if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
 			return fmt.Errorf("failed to get window extended style: %w", err)
 		}
 		exStyle := uint32(ret)
+		if err := s.setWindowProp(hwnd, PROP_ORIGINAL_EXSTYLE, uintptr(exStyle)); err != nil {
+			return fmt.Errorf("failed to save original extended style: %w", err)
+		}
 
-		// Get current style
 		ret, _, err = s.getWinLongPtr.Call(uintptr(hwnd), GWL_STYLE_PTR)
 		if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
 			return fmt.Errorf("failed to get window style: %w", err)
 		}
 		style := uint32(ret)
+		if err := s.setWindowProp(hwnd, PROP_ORIGINAL_STYLE, uintptr(style)); err != nil {
+			return fmt.Errorf("failed to save original style: %w", err)
+		}
+
+		// Save the desktop number before hiding
+		if err := s.setWindowProp(hwnd, PROP_DESKTOP_NUMBER, uintptr(windowDesktop)); err != nil {
+			return fmt.Errorf("failed to save desktop number: %w", err)
+		}
 
 		fmt.Printf("  Current styles - exStyle: %x, style: %x\n", exStyle, style)
 
-		// Add WS_EX_TOOLWINDOW and remove WS_EX_APPWINDOW to hide from taskbar
-		newExStyle := (exStyle | WS_EX_TOOLWINDOW) &^ WS_EX_APPWINDOW
-		// Keep the window visible
-		newStyle := style | WS_VISIBLE
+		// First hide the window to prevent flashing
+		ret, _, err = s.showWindow.Call(uintptr(hwnd), SW_HIDE)
+		if err != nil && err != windows.ERROR_SUCCESS {
+			return fmt.Errorf("failed to hide window: %w", err)
+		}
 
-		fmt.Printf("  New styles - exStyle: %x, style: %x\n", newExStyle, style)
+		// Remove WS_EX_APPWINDOW and add WS_EX_TOOLWINDOW to hide from taskbar
+		newExStyle := (exStyle &^ WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW
+		// Remove WS_VISIBLE from style
+		newStyle := style &^ WS_VISIBLE
+
+		fmt.Printf("  New styles - exStyle: %x, style: %x\n", newExStyle, newStyle)
 
 		// Apply the new extended style
 		ret, _, err = s.setWinLongPtr.Call(
@@ -252,7 +427,6 @@ func (s *Service) SetWindowVisibility(hwnd syscall.Handle, hide bool) error {
 			GWL_EXSTYLE_PTR,
 			uintptr(newExStyle),
 		)
-		// SetWindowLongPtr returns the previous value, 0 might be valid
 		if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
 			return fmt.Errorf("failed to set window extended style: %w", err)
 		}
@@ -267,87 +441,98 @@ func (s *Service) SetWindowVisibility(hwnd syscall.Handle, hide bool) error {
 			return fmt.Errorf("failed to set window style: %w", err)
 		}
 
-		// Update the window to reflect the style changes
-		ret, _, err = s.setWinPos.Call(
-			uintptr(hwnd),
-			0,
-			0, 0, 0, 0,
-			uintptr(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_FRAMECHANGED),
-		)
-		if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
-			return fmt.Errorf("failed to update window position: %w", err)
-		}
-
-		// Check desktop number after hiding
-		newDesktop := s.GetWindowDesktopNumber(hwnd)
-		fmt.Printf("  Desktop number before: %d, after: %d\n", windowDesktop+1, newDesktop+1)
-
-		fmt.Printf("  Taskbar icon hidden\n")
+		fmt.Printf("  Window hidden\n")
 	} else {
-		fmt.Printf("Attempting to show taskbar icon: '%s' (hwnd: %x, desktop: %d)\n", title, hwnd, windowDesktop+1)
+		fmt.Printf("Attempting to show window: '%s' (hwnd: %x, desktop: %d)\n", title, hwnd, windowDesktop+1)
 
-		// Get current extended style
-		ret, _, err := s.getWinLongPtr.Call(uintptr(hwnd), GWL_EXSTYLE_PTR)
-		if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
-			return fmt.Errorf("failed to get window extended style: %w", err)
+		// Get the original desktop number
+		origDesktop, err := s.getWindowProp(hwnd, PROP_DESKTOP_NUMBER)
+		if err == nil {
+			// Move window back to its original desktop before showing it
+			if err := s.MoveWindowToDesktop(hwnd, int(origDesktop)); err != nil {
+				return fmt.Errorf("failed to restore window to original desktop: %w", err)
+			}
+			fmt.Printf("  Restored to original desktop: %d\n", int(origDesktop)+1)
 		}
-		exStyle := uint32(ret)
 
-		// Get current style
-		ret, _, err = s.getWinLongPtr.Call(uintptr(hwnd), GWL_STYLE_PTR)
-		if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
-			return fmt.Errorf("failed to get window style: %w", err)
+		// First hide the window to prevent flashing while we restore styles
+		ret, _, err := s.showWindow.Call(uintptr(hwnd), SW_HIDE)
+		if err != nil && err != windows.ERROR_SUCCESS {
+			return fmt.Errorf("failed to temporarily hide window: %w", err)
 		}
-		style := uint32(ret)
 
-		fmt.Printf("  Current styles - exStyle: %x, style: %x\n", exStyle, style)
+		// First restore the extended style to show in taskbar
+		origExStyle, err := s.getWindowProp(hwnd, PROP_ORIGINAL_EXSTYLE)
+		if err != nil {
+			return fmt.Errorf("failed to get original extended style: %w", err)
+		}
 
-		// Remove WS_EX_TOOLWINDOW and add WS_EX_APPWINDOW to show in taskbar
-		newExStyle := (exStyle &^ WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
-		// Keep the window visible
-		newStyle := style | WS_VISIBLE
-
-		fmt.Printf("  New styles - exStyle: %x, style: %x\n", newExStyle, style)
-
-		// Apply the new extended style
+		fmt.Printf("  Restoring original extended style: %x\n", origExStyle)
 		ret, _, err = s.setWinLongPtr.Call(
 			uintptr(hwnd),
 			GWL_EXSTYLE_PTR,
-			uintptr(newExStyle),
+			uintptr(origExStyle),
 		)
-		// SetWindowLongPtr returns the previous value, 0 might be valid
 		if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
-			return fmt.Errorf("failed to set window extended style: %w", err)
+			return fmt.Errorf("failed to restore window extended style: %w", err)
 		}
 
-		// Apply the new style
+		// Then restore the original style
+		origStyle, err := s.getWindowProp(hwnd, PROP_ORIGINAL_STYLE)
+		if err != nil {
+			return fmt.Errorf("failed to get original style: %w", err)
+		}
+
+		fmt.Printf("  Restoring original style: %x\n", origStyle)
 		ret, _, err = s.setWinLongPtr.Call(
 			uintptr(hwnd),
 			GWL_STYLE_PTR,
-			uintptr(newStyle),
+			uintptr(origStyle), // Use exact original style
 		)
 		if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
-			return fmt.Errorf("failed to set window style: %w", err)
+			return fmt.Errorf("failed to restore window style: %w", err)
 		}
 
-		// Update the window to reflect the style changes
-		ret, _, err = s.setWinPos.Call(
-			uintptr(hwnd),
-			0,
-			0, 0, 0, 0,
-			uintptr(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_FRAMECHANGED),
-		)
-		if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
-			return fmt.Errorf("failed to update window position: %w", err)
+		// Now show the window
+		ret, _, err = s.showWindow.Call(uintptr(hwnd), SW_SHOW)
+		if err != nil && err != windows.ERROR_SUCCESS {
+			return fmt.Errorf("failed to show window: %w", err)
 		}
 
-		// Check desktop number after showing
-		newDesktop := s.GetWindowDesktopNumber(hwnd)
-		fmt.Printf("  Desktop number before: %d, after: %d\n", windowDesktop+1, newDesktop+1)
+		// Verify we're on the correct desktop
+		currentDesktop := s.GetWindowDesktopNumber(hwnd)
+		if err == nil && currentDesktop != int(origDesktop) {
+			fmt.Printf("  Warning: Window appeared on wrong desktop (expected %d, got %d), retrying move...\n",
+				int(origDesktop)+1, currentDesktop+1)
+			if err := s.MoveWindowToDesktop(hwnd, int(origDesktop)); err != nil {
+				return fmt.Errorf("failed to restore window to original desktop on retry: %w", err)
+			}
+		}
 
-		fmt.Printf("  Taskbar icon shown\n")
+		// Verify the window is visible and has the correct styles
+		style, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_STYLE_PTR)
+		exStyle, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_EXSTYLE_PTR)
+		isVisible := s.IsWindowVisible(hwnd)
+		fmt.Printf("  Final window state - exStyle: %x, style: %x, visible: %v\n", exStyle, style, isVisible)
+
+		fmt.Printf("  Window shown\n")
+
+		// Keep the properties for better state tracking
+		// This helps us track which windows we've modified
 	}
 
+	return nil
+}
+
+// MoveWindowToDesktop moves a window to the specified desktop number (0-based)
+func (s *Service) MoveWindowToDesktop(hwnd syscall.Handle, desktopNum int) error {
+	ret, _, err := s.vdapi.NewProc("MoveWindowToDesktopNumber").Call(
+		uintptr(hwnd),
+		uintptr(desktopNum),
+	)
+	if ret == 0 && err != nil && err != windows.ERROR_SUCCESS {
+		return fmt.Errorf("failed to move window to desktop: %w", err)
+	}
 	return nil
 }
 
