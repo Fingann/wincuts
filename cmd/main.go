@@ -85,8 +85,14 @@ func main() {
 		fmt.Printf("Found window: 0x%x\n", hwnd)
 
 		// Set window visibility
-		if err := svc.SetWindowVisibility(hwnd, *hide); err != nil {
-			log.Fatalf("Failed to change window visibility: %v", err)
+		if *hide {
+			if err := svc.SetWindowVisabilityHidden(hwnd); err != nil {
+				log.Fatalf("Failed to change window visibility: %v", err)
+			}
+		} else {
+			if err := svc.SetWindowVisabilityVisible(hwnd); err != nil {
+				log.Fatalf("Failed to change window visibility: %v", err)
+			}
 		}
 
 		fmt.Printf("Window visibility changed successfully. Hidden: %v\n", *hide)
