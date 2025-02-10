@@ -3,6 +3,7 @@
 package window
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,10 +60,6 @@ const (
 
 	// GetWindow constants
 	GW_OWNER = 4
-
-	// Property prefixes to identify our properties
-	PROP_PREFIX = "WinCuts_"
-	PROP_MARKER = "WinCuts_Marker"
 )
 
 // GetWindowLongPtrIndex represents the index values for GetWindowLongPtr
@@ -78,6 +75,8 @@ const (
 var (
 	gwlStyle   = -16
 	gwlExStyle = -20
+
+	ERR_WINDOW_NOT_ON_ANY_DESKTOP = errors.New("window is not on any desktop")
 )
 
 // WindowInfo contains information about a window
@@ -85,9 +84,6 @@ type WindowInfo struct {
 	Handle      syscall.Handle
 	Title       string
 	DesktopNum  int
-	IsVisible   bool
-	IsMinimized bool
-	IsMaximized bool
 	IsHidden    bool
 }
 
@@ -107,6 +103,7 @@ type Service struct {
 	setProp                *windows.LazyProc
 	getProp                *windows.LazyProc
 	removeProp             *windows.LazyProc
+	propService            *PropService
 }
 
 // NewService creates a new window management service
@@ -135,6 +132,8 @@ func NewService() (*Service, error) {
 		return nil, fmt.Errorf("failed to load VirtualDesktopAccessor.dll: %w", dllErr)
 	}
 
+	propService := NewPropService()
+
 	return &Service{
 		user32:                 user32,
 		vdapi:                  vdapi,
@@ -150,13 +149,20 @@ func NewService() (*Service, error) {
 		setProp:                user32.NewProc("SetPropW"),
 		getProp:                user32.NewProc("GetPropW"),
 		removeProp:             user32.NewProc("RemovePropW"),
+		propService:            propService,
 	}, nil
 }
 
 // GetWindowDesktopNumber gets the desktop number for a window
-func (s *Service) GetWindowDesktopNumber(hwnd syscall.Handle) int {
-	ret, _, _ := s.getWindowDesktopNumber.Call(uintptr(hwnd))
-	return int(ret)
+func (s *Service) GetWindowDesktopNumber(hwnd syscall.Handle) (int, error) {
+	ret, _, err := s.getWindowDesktopNumber.Call(uintptr(hwnd))
+	if err != nil && err != windows.ERROR_SUCCESS {
+		return 0, fmt.Errorf("failed to get window desktop number: %w", err)
+	}
+	if ret == 4294967295 {
+		return 0, ERR_WINDOW_NOT_ON_ANY_DESKTOP
+	}
+	return int(ret), nil
 }
 
 // GetWindowTitle gets the title of a window
@@ -179,32 +185,6 @@ func (s *Service) IsWindowVisible(hwnd syscall.Handle) bool {
 	return ret != 0
 }
 
-// getClassName gets the class name of a window
-func (s *Service) getClassName(hwnd syscall.Handle) string {
-	var className [256]uint16
-	ret, _, _ := s.user32.NewProc("GetClassNameW").Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(&className[0])),
-		uintptr(len(className)),
-	)
-	if ret == 0 {
-		return ""
-	}
-	return windows.UTF16ToString(className[:])
-}
-
-// getWindow gets a window handle by command
-func (s *Service) getWindow(hwnd syscall.Handle, cmd uint32) syscall.Handle {
-	ret, _, _ := s.user32.NewProc("GetWindow").Call(
-		uintptr(hwnd),
-		uintptr(cmd),
-	)
-	return syscall.Handle(ret)
-}
-
-
-
-
 func (s *Service) GetAllWindows() ([]WindowInfo, error) {
 	var windows []WindowInfo
 	var totalWindows int
@@ -213,61 +193,44 @@ func (s *Service) GetAllWindows() ([]WindowInfo, error) {
 		totalWindows++
 
 		// Get window title
-		title, _ := s.GetWindowTitle(hwnd)
-		if title == "" {
-			return 1 // Skip windows with no title
+		title, err := s.GetWindowTitle(hwnd)
+		if err != nil {
+			fmt.Printf("  Error getting window title, window: %x, err: %v\n", hwnd, err.Error())
+			return 1
 		}
-		if strings.Contains(title, "Excel") {
+		if strings.Contains(title, "Teams") {
 			fmt.Printf("  Found window: %s (hwnd: %x)\n", title, hwnd)
 		}
-
-		// Check if this is one of our hidden windows first
-		if s.isOurHiddenWindow(hwnd) {
-			storedDesktop, err := s.getWindowProp(hwnd, PROP_DESKTOP_NUMBER)
-			if err == nil  {
-				// Get window states for our hidden window
-				style, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_STYLE_PTR)
-				isMinimized := (style & WS_MINIMIZE) != 0
-				isMaximized := (style & WS_MAXIMIZE) != 0
-
-				windows = append(windows, WindowInfo{
-					Handle:      hwnd,
-					Title:       title,
-					DesktopNum:  int(storedDesktop) + 1,
-					IsVisible:   false,
-					IsMinimized: isMinimized,
-					IsMaximized: isMaximized,
-					IsHidden:    true,
-				})
-				fmt.Printf("  Found hidden window: %s (hwnd: %x, desktop: %d, hidden: %v)\n", title, hwnd, int(storedDesktop)+1, true)
+		isHidden := false
+		// check to see if the window is on any desktop
+		desktopNumber, err := s.GetWindowDesktopNumber(hwnd)
+		if err != nil {
+			if err != ERR_WINDOW_NOT_ON_ANY_DESKTOP {
+				return 1
 			}
-			return 1
+				// get current desktop number from prop service
+				desktopNumber, err = s.propService.GetDesktopNumber(hwnd)
+				if err != nil {
+					if err == ERR_NO_DATA {
+						// window is not on any desktop and prop service has no data
+						// This window is not managed by WinCuts
+						return 1
+					}
+					// error while getting desktop number from prop service
+					return 1
+				}
+				isHidden = true
 		}
-	
-
-		// Check desktop number for visible windows
-		windowDesktop := s.GetWindowDesktopNumber(hwnd)
-		// If the window is not on any desktop, skip it
-		if windowDesktop == 4294967295 {
-			return 1
-		}
-
-		// Get window states
-		style, _, _ := s.getWinLongPtr.Call(uintptr(hwnd), GWL_STYLE_PTR)
-		isVisible := s.IsWindowVisible(hwnd)
-		isMinimized := (style & WS_MINIMIZE) != 0
-		isMaximized := (style & WS_MAXIMIZE) != 0
+		// Get window states for our hidden window
 
 		windows = append(windows, WindowInfo{
-			Handle:      hwnd,
-			Title:       title,
-			DesktopNum:  windowDesktop + 1,
-			IsVisible:   isVisible,
-			IsMinimized: isMinimized,
-			IsMaximized: isMaximized,
-			IsHidden:    false,
+			Handle:     hwnd,
+			Title:      title,
+			DesktopNum: desktopNumber + 1,
+			IsHidden:   isHidden,
 		})
-		fmt.Printf("  Added window: %s (hwnd: %x, desktop: %d, hidden: %v)\n", title, hwnd, windowDesktop+1, false)
+		fmt.Printf("  Found hidden window: %s (hwnd: %x, desktop: %d, hidden: %v)\n", title, hwnd, desktopNumber+1, isHidden)
+
 		return 1
 	})
 
@@ -282,7 +245,7 @@ func (s *Service) GetWindowsOnDesktop(desktopNum int) ([]WindowInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	wantedWindows:= make([]WindowInfo, 0, len(windows))
+	wantedWindows := make([]WindowInfo, 0, len(windows))
 	for _, window := range windows {
 		if window.DesktopNum == desktopNum {
 			wantedWindows = append(wantedWindows, window)
@@ -292,211 +255,52 @@ func (s *Service) GetWindowsOnDesktop(desktopNum int) ([]WindowInfo, error) {
 	return wantedWindows, nil
 }
 
-// isOurHiddenWindow checks if this is a window that we've hidden
-func (s *Service) isOurHiddenWindow(hwnd syscall.Handle) bool {
-	// Check for our marker
-	markerPtr, err := windows.UTF16PtrFromString(PROP_MARKER)
-	if err != nil {
-		return false
-	}
-
-	marker, _, err := s.getProp.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(markerPtr)),
-	)
-	if err != nil  && err != windows.NOERROR {
-		return false
-	}
-
-	// Verify it's our process ID
-	if marker == 0  {
-		return false
-	}
-
-	// Check if the desktop property exists
-	_, err = s.getWindowProp(hwnd, PROP_DESKTOP_NUMBER)
-	return err == nil
-}
-
-// FindWindow finds a window by its title
-func (s *Service) FindWindow(title string) (syscall.Handle, error) {
-	titlePtr, err := windows.UTF16PtrFromString(title)
-	if err != nil {
-		return 0, fmt.Errorf("error converting window title: %w", err)
-	}
-
-	hwnd, _, err := s.findWindow.Call(0, uintptr(unsafe.Pointer(titlePtr)))
-	if hwnd == 0 {
-		return 0, fmt.Errorf("window not found: %w", err)
-	}
-
-	return syscall.Handle(hwnd), nil
-}
-
-// getWindowProp gets a window property
-func (s *Service) getWindowProp(hwnd syscall.Handle, name string) (uintptr, error) {
-	namePtr, err := windows.UTF16PtrFromString(name)
-	if err != nil {
-		return 0, fmt.Errorf("failed to convert property name: %w", err)
-	}
-
-	// First check if this window has our marker
-	markerPtr, err := windows.UTF16PtrFromString(PROP_MARKER)
-	if err != nil {
-		return 0, fmt.Errorf("failed to convert marker name: %w", err)
-	}
-
-	marker, _, err := s.getProp.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(markerPtr)),
-	)
-	if err != nil  && err != windows.NOERROR {
-		return 0, fmt.Errorf("failed to get property: %w", err)
-	}
-
-	// If no marker or wrong process, this isn't our window
-	if marker == 0 {
-		return 0, fmt.Errorf("not our window")
-	}
-
-	// Get the actual property
-	ret, _, err := s.getProp.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(namePtr)),
-	)
-	if err != nil  && err != windows.NOERROR {
-		return 0, fmt.Errorf("failed to get property: %w", err)
-	}
-
-	if ret == 0 {
-		return 0, fmt.Errorf("property not found")
-	}
-
-	return ret, nil
-}
-
-// setWindowProp sets a window property
-func (s *Service) setWindowProp(hwnd syscall.Handle, name string, value uintptr) error {
-	// First set our marker with our process ID
-	markerPtr, err := windows.UTF16PtrFromString(PROP_MARKER)
-	if err != nil {
-		return fmt.Errorf("failed to convert marker name: %w", err)
-	}
-
-	pid := windows.GetCurrentProcessId()
-	ret, _, err := s.setProp.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(markerPtr)),
-		uintptr(pid),
-	)
-	if ret == 0 {
-		return fmt.Errorf("failed to set marker: %w", err)
-	}
-
-	// Then set the actual property
-	namePtr, err := windows.UTF16PtrFromString(name)
-	if err != nil {
-		return fmt.Errorf("failed to convert property name: %w", err)
-	}
-
-	ret, _, err = s.setProp.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(namePtr)),
-		value,
-	)
-	if ret == 0 {
-		return fmt.Errorf("failed to set window property: %w", err)
-	}
-
-	return nil
-}
-
-// removeWindowProp removes a window property and our marker
-func (s *Service) removeWindowProp(hwnd syscall.Handle, name string) error {
-	namePtr, err := windows.UTF16PtrFromString(name)
-	if err != nil {
-		return fmt.Errorf("failed to convert property name: %w", err)
-	}
-
-	_, _, err = s.removeProp.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(namePtr)),
-	)
-	if err != nil && err != windows.ERROR_SUCCESS {
-		return fmt.Errorf("failed to remove window property: %w", err)
-	}
-
-	// Also remove our marker if this was the last property
-	markerPtr, err := windows.UTF16PtrFromString(PROP_MARKER)
-	if err != nil {
-		return fmt.Errorf("failed to convert marker name: %w", err)
-	}
-
-	_, _, err = s.removeProp.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(markerPtr)),
-	)
-	if err != nil && err != windows.ERROR_SUCCESS {
-		return fmt.Errorf("failed to remove marker: %w", err)
-	}
-
-	return nil
-}
-
 func (s *Service) SetWindowVisabilityHidden(hwnd syscall.Handle) error {
 	title, _ := s.GetWindowTitle(hwnd)
-	windowDesktop := s.GetWindowDesktopNumber(hwnd)
-
-	fmt.Printf("Attempting to hide window: '%s' (hwnd: %x, desktop: %d)\n", title, hwnd, windowDesktop+1)
-
-
-	// Save the desktop number before hiding
-	if err := s.setWindowProp(hwnd, PROP_DESKTOP_NUMBER, uintptr(windowDesktop)); err != nil {
-		return fmt.Errorf("failed to save desktop number: %w", err)
+	fmt.Printf("  Setting window visibility to hidden: %s (hwnd: %x)\n", title, hwnd)
+	windowDesktop, err := s.GetWindowDesktopNumber(hwnd)
+	if err != nil {
+		if err == ERR_WINDOW_NOT_ON_ANY_DESKTOP {
+			// window is not on any desktop, so we don't need to hide it
+			return nil
+		}
+		return fmt.Errorf("failed to get window desktop number: %w", err)
 	}
 
-	// First hide the window to prevent flashing
-	_, _, err := s.showWindow.Call(uintptr(hwnd), SW_HIDE)
+	// Save the desktop number before hiding
+	if err := s.propService.SetDesktopNumber(hwnd, windowDesktop); err != nil {
+		return fmt.Errorf("failed to save desktop number: %w", err)
+	}
+	// hide the window
+	_, _, err = s.showWindow.Call(uintptr(hwnd), SW_HIDE)
 	if err != nil && err != windows.ERROR_SUCCESS {
 		return fmt.Errorf("failed to hide window: %w", err)
 	}
 
-
-	fmt.Printf("  Window hidden\n")
+	fmt.Sprintf("  Window hidden: %s (hwnd: %x, desktop: %d)\n", title, hwnd, windowDesktop+1)
 	return nil
 }
 
 func (s *Service) SetWindowVisabilityVisible(hwnd syscall.Handle) error {
 
 	title, _ := s.GetWindowTitle(hwnd)
-	windowDesktop := s.GetWindowDesktopNumber(hwnd)
-	fmt.Printf("Attempting to show window: '%s' (hwnd: %x, desktop: %d)\n", title, hwnd, windowDesktop+1)
-
 	// Get the original desktop number
-	origDesktop, err := s.getWindowProp(hwnd, PROP_DESKTOP_NUMBER)
-	if err == nil {
-		// Move window back to its original desktop before showing it
-		if err := s.MoveWindowToDesktop(hwnd, int(origDesktop)); err != nil {
-			return fmt.Errorf("failed to restore window to original desktop: %w", err)
-		}
-		fmt.Printf("  Restored to original desktop: %d\n", int(origDesktop)+1)
+	origDesktop, err := s.propService.GetDesktopNumber(hwnd)
+	if err != nil {
+		return fmt.Errorf("failed to get original desktop number: %w", err)
 	}
 
-	// First hide the window to prevent flashing while we restore styles
+	// show the window
 	_, _, err = s.showWindow.Call(uintptr(hwnd), SW_SHOW)
 	if err != nil && err != windows.ERROR_SUCCESS {
 		return fmt.Errorf("failed to temporarily hide window: %w", err)
 	}
 
-		// Move window back to its original desktop before showing it
-		if err := s.MoveWindowToDesktop(hwnd, int(origDesktop)); err != nil {
-			return fmt.Errorf("failed to restore window to original desktop: %w", err)
-		}
-		fmt.Printf("  Restored to original desktop: %d\n", int(origDesktop)+1)
-	
-
-
-	fmt.Printf("  Window shown\n")
+	// Move window back to its original desktop before showing it
+	if err := s.MoveWindowToDesktop(hwnd, int(origDesktop)); err != nil {
+		return fmt.Errorf("failed to restore window to original desktop: %w", err)
+	}
+	fmt.Sprintf("  Window shown: %s (hwnd: %x, desktop: %d)\n", title, hwnd, origDesktop+1)
 
 	return nil
 }
@@ -527,24 +331,16 @@ func (s *Service) HideWindowsOnDesktop(desktopNum int) error {
 	// Hide each window
 	var errors []error
 	for _, win := range windows {
-		state := ""
-		if win.IsMinimized {
-			state = " (Minimized)"
-		} else if win.IsMaximized {
-			state = " (Maximized)"
+		// skip windows that are already hidden
+		if win.IsHidden {
+			continue
 		}
-		visibility := ""
-		if !win.IsVisible {
-			visibility = " [Hidden]"
-		}
-		fmt.Printf("- Hiding: %s%s%s\n", win.Title, state, visibility)
-
 		if err := s.SetWindowVisabilityHidden(win.Handle); err != nil {
 			fmt.Printf("  Error hiding window: %v\n", err)
 			errors = append(errors, fmt.Errorf("failed to hide window '%s': %w", win.Title, err))
-		} else {
-			fmt.Printf("  Successfully hidden\n")
 		}
+
+		fmt.Printf("  Successfully hidden\n")
 	}
 
 	if len(errors) > 0 {
@@ -569,23 +365,12 @@ func (s *Service) ShowWindowsOnDesktop(desktopNum int) error {
 	// Show each window
 	var errors []error
 	for _, win := range windows {
-		state := ""
-		if win.IsMinimized {
-			state = " (Minimized)"
-		} else if win.IsMaximized {
-			state = " (Maximized)"
+		if !win.IsHidden {
+			// window is not hidden, so we don't need to show it
+			continue
 		}
-		visibility := ""
-		if !win.IsVisible {
-			visibility = " [Hidden]"
-		}
-		fmt.Printf("- Showing: %s%s%s\n", win.Title, state, visibility)
-
 		if err := s.SetWindowVisabilityVisible(win.Handle); err != nil {
-			fmt.Printf("  Error showing window: %v\n", err)
 			errors = append(errors, fmt.Errorf("failed to show window '%s': %w", win.Title, err))
-		} else {
-			fmt.Printf("  Successfully shown\n")
 		}
 	}
 

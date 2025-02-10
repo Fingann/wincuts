@@ -3,5 +3,58 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
-    "configurations": []
+    "configurations": [
+        {
+            "name": "list 6",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmd/main.go",
+            "args": [
+                "-list",
+                "6"
+            ],
+
+            "env": {
+                "GOOS": "windows",
+                "GOARCH": "amd64"
+            }
+
+
+        },
+        {
+            "name": "hide 6",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmd/main.go",
+            "args": [
+
+
+                "-hidedesktop",
+                "6"
+            ],
+
+
+            "env": {
+                "GOOS": "windows",
+                "GOARCH": "amd64"
+            }
+        },
+        {
+            "name": "show 6",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmd/main.go",
+            "args": [
+                "-showdesktop",
+                "6"
+            ],
+
+            "env": {
+                "GOOS": "windows",
+                "GOARCH": "amd64"
+            }
+        }
+    ]
+
+
 }

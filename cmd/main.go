@@ -13,8 +13,6 @@ import (
 
 func main() {
 	// Parse command line flags
-	windowTitle := flag.String("window", "", "Window title to find")
-	hide := flag.Bool("hide", false, "Hide the window (true = hide, false = show)")
 	listDesktop := flag.Int("list", -1, "List all windows on the specified desktop number")
 	hideDesktop := flag.Int("hidedesktop", -1, "Hide all windows on the specified desktop number")
 	showDesktop := flag.Int("showdesktop", -1, "Show all windows on the specified desktop number")
@@ -60,43 +58,12 @@ func main() {
 		}
 		fmt.Printf("Windows on desktop %d:\n", *listDesktop)
 		for _, win := range windows {
-			state := ""
-			if win.IsMinimized {
-				state = " (Minimized)"
-			} else if win.IsMaximized {
-				state = " (Maximized)"
-			}
-			visibility := ""
-			if !win.IsVisible {
-				visibility = " [Hidden]"
-			}
-			fmt.Printf("- %s%s%s\n", win.Title, state, visibility)
+			fmt.Printf("- %s: %d, %v\n", win.Title, win.DesktopNum, win.IsHidden)
 		}
 		return
 	}
 
-	// Handle window visibility if a window title is provided
-	if *windowTitle != "" {
-		// Find the window
-		hwnd, err := svc.FindWindow(*windowTitle)
-		if err != nil {
-			log.Fatalf("Failed to find window: %v", err)
-		}
-		fmt.Printf("Found window: 0x%x\n", hwnd)
-
-		// Set window visibility
-		if *hide {
-			if err := svc.SetWindowVisabilityHidden(hwnd); err != nil {
-				log.Fatalf("Failed to change window visibility: %v", err)
-			}
-		} else {
-			if err := svc.SetWindowVisabilityVisible(hwnd); err != nil {
-				log.Fatalf("Failed to change window visibility: %v", err)
-			}
-		}
-
-		fmt.Printf("Window visibility changed successfully. Hidden: %v\n", *hide)
-	} else if *listDesktop < 0 && *hideDesktop < 0 && *showDesktop < 0 {
+	 if *listDesktop < 0 && *hideDesktop < 0 && *showDesktop < 0 {
 		// No operation specified
 		fmt.Println("Please specify one of: -window, -list, -hidedesktop, or -showdesktop flags")
 		flag.Usage()
