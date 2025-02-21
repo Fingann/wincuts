@@ -1,3 +1,5 @@
+//go:build windows
+
 // Package systray handles the system tray icon and its interactions.
 // It provides functionality to display and update the current virtual desktop number
 // in the Windows system tray.

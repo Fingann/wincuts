@@ -1,3 +1,5 @@
+//go:build windows
+
 // Package systray provides system tray functionality for displaying the current virtual desktop.
 package systray
 

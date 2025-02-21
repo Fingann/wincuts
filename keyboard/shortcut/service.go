@@ -1,57 +1,83 @@
 package shortcut
 
 import (
+	"log/slog"
 	"sync"
-	"wincuts/keyboard"
 )
 
-// KeybindingService struct
+const (
+	blockChanBufferSize = 10 // Increased buffer size
+)
+
+// Service struct
 type Service struct {
-    eventChan    <- chan keyboard.KeyEvent 
-    matcher      *Matcher
-    wg          sync.WaitGroup
-    stopChan   chan struct{}
+	shortcutChan chan *KeyBindingAction
+	matcher      *Matcher
+	wg           sync.WaitGroup
+	stopChan     chan struct{}
+	blockChan    chan bool // Channel to communicate blocking decisions
 }
 
-// NewKeybindingService creates a new KeybindingService
-func NewService(eventChan <- chan keyboard.KeyEvent) *Service {
+// NewService creates a new KeybindingService
+func NewService(shortcutChan chan *KeyBindingAction, matcher *Matcher) *Service {
+	return &Service{
+		shortcutChan: shortcutChan,
+		matcher:      matcher,
+		stopChan:     make(chan struct{}),
+		blockChan:    make(chan bool, blockChanBufferSize), // Larger buffer
 
-    return &Service{
-        eventChan:   eventChan,
-        matcher:    NewMatcher(),
-    }
+	}
 }
 
-
-// RegisterKeyCombo registers a key combination with an action
+// RegisterKeyBindingActions registers key binding actions
 func (s *Service) RegisterKeyBindingActions(bindings ...KeyBindingAction) *Service {
-    s.matcher.AddBindings(bindings...)
-    return s
+	s.matcher.AddBindings(bindings...)
+	return s
 }
-
 
 // Start starts the keybinding service to listen for events
 func (s *Service) Start() {
-    s.wg.Add(1)
-    go func() {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		for {
+			select {
+			case <-s.stopChan:
+				return
+			case binding := <-s.shortcutChan:
+				go func() {
+					slog.Info("executing action", "binding", binding.Binding.PrettyString())
+					if err := binding.Execute(); err != nil {
+						slog.Error("failed to execute action", "error", err)
+					}
+				}()
+			}
+		}
+	}()
+}
 
-        for {
-        select {
-        case <- s.stopChan:
-            s.wg.Done()
-            return
+// GetBlockDecision returns the blocking decision
+func (s *Service) GetBlockDecision() bool {
+	select {
+	case shouldBlock := <-s.blockChan:
+		return shouldBlock
+	default:
+		return false
+	}
+}
 
-        case event := <- s.eventChan:
-            s.matcher.Match(event)
-
-        }
-    }
-    }()
+func (s *Service) GetShortcutChan() chan *KeyBindingAction {
+	return s.shortcutChan
 }
 
 // Stop stops the keybinding service
 func (s *Service) Stop() {
-    close(s.stopChan)
-    s.wg.Wait()
+	close(s.stopChan)
+	s.wg.Wait()
+}
+
+
+func (s *Service) Match(event KeyEvent) (*KeyBindingAction, bool) {
+	return s.matcher.Match(event)
 }
 

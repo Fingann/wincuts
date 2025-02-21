@@ -155,7 +155,6 @@ func TestMergeConfigs(t *testing.T) {
 							Keys:     []string{"LAlt", "1"},
 							Action:   "SwitchDesktop",
 							Params:   []string{"1"},
-							Category: "Desktop",
 						},
 					},
 				},
@@ -175,7 +174,6 @@ func TestMergeConfigs(t *testing.T) {
 							Keys:     []string{"LAlt", "2"},
 							Action:   "SwitchDesktop",
 							Params:   []string{"2"},
-							Category: "Desktop",
 						},
 					},
 				},
@@ -195,7 +193,6 @@ func TestMergeConfigs(t *testing.T) {
 							Keys:     []string{"LAlt", "2"},
 							Action:   "SwitchDesktop",
 							Params:   []string{"2"},
-							Category: "Desktop",
 						},
 					},
 				},
@@ -263,7 +260,6 @@ shortcuts:
 							Keys:     []string{"LAlt", "1"},
 							Action:   "SwitchDesktop",
 							Params:   []string{"1"},
-							Category: "Desktop",
 						},
 					},
 				},
@@ -272,7 +268,7 @@ shortcuts:
 		{
 			name:     "default config for non-existent file",
 			filePath: "nonexistent.yaml",
-			expected: NewDefaultConfig(),
+			expected: DefaultConfig(),
 		},
 	}
 
@@ -305,7 +301,6 @@ func TestKeyBindingValidation(t *testing.T) {
 				Keys:     []string{"1"},
 				Action:   "SwitchDesktop",
 				Params:   []string{"1"},
-				Category: "Desktop",
 			},
 			wantErr: false,
 		},
@@ -315,7 +310,6 @@ func TestKeyBindingValidation(t *testing.T) {
 				Keys:     []string{"LCtrl", "1"},
 				Action:   "SwitchDesktop",
 				Params:   []string{"1"},
-				Category: "Desktop",
 			},
 			wantErr: false,
 		},
@@ -325,7 +319,6 @@ func TestKeyBindingValidation(t *testing.T) {
 				Keys:     []string{"invalid"},
 				Action:   "SwitchDesktop",
 				Params:   []string{"1"},
-				Category: "Desktop",
 			},
 			wantErr: true,
 		},
@@ -335,7 +328,6 @@ func TestKeyBindingValidation(t *testing.T) {
 				Keys:     []string{},
 				Action:   "SwitchDesktop",
 				Params:   []string{"1"},
-				Category: "Desktop",
 			},
 			wantErr: true,
 		},
@@ -356,7 +348,7 @@ func TestKeyBindingValidation(t *testing.T) {
 
 // TestDefaultConfig tests the default configuration values
 func TestDefaultConfig(t *testing.T) {
-	cfg := NewDefaultConfig()
+	cfg := DefaultConfig()
 
 	assert.Equal(t, slog.LevelDebug, cfg.Logging.Level)
 	assert.Equal(t, 22, cfg.UI.TrayIcon.Size)

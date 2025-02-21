@@ -14,6 +14,7 @@ type SubscriberManager[T any] struct {
 func NewSubscriberManager[T any]() *SubscriberManager[T] {
 	return &SubscriberManager[T]{
 		subscribers: make(map[chan T]struct{}),
+		mu:          sync.Mutex{},
 	}
 }
 

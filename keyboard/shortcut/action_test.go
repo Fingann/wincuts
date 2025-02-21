@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"wincuts/keyboard"
 	"wincuts/keyboard/types"
 )
 
@@ -21,7 +20,7 @@ func TestKeyBindingActionExecute(t *testing.T) {
 	}
 	// Create a binding action using the provided keys and action.
 	keys := []types.VirtualKey{types.VK_LMENU, types.VK_1}
-	bindingAction := NewBindingAction(keys, action)
+	bindingAction := NewBindingAction(keys, action, false)
 
 	err := bindingAction.Execute()
 	assert.NoError(err, "Execute should not return an error")
@@ -36,22 +35,22 @@ func TestKeyBindingActionMatch(t *testing.T) {
 	// Create a binding action; by default, NewBindingAction sets onKeyDown to false.
 	action := func() error { return nil }
 	keys := []types.VirtualKey{types.VK_LMENU, types.VK_1}
-	bindingAction := NewBindingAction(keys, action)
+	bindingAction := NewBindingAction(keys, action, false)
 
 	// Create a matching event: KeyDown is false and pressed keys exactly match.
-	matchingEvent := keyboard.KeyEvent{
+	matchingEvent := KeyEvent{
 		KeyDown:     false,
 		PressedKeys: keys,
 	}
 
 	// Create a non-matching event where KeyDown differs.
-	nonMatchingEvent := keyboard.KeyEvent{
+	nonMatchingEvent := KeyEvent{
 		KeyDown:     true,
 		PressedKeys: keys,
 	}
 
 	// Create a non-matching event where the pressed keys differ.
-	nonMatchingKeysEvent := keyboard.KeyEvent{
+	nonMatchingKeysEvent := KeyEvent{
 		KeyDown:     false,
 		PressedKeys: []types.VirtualKey{types.VK_LMENU, types.VK_LSHIFT},
 	}

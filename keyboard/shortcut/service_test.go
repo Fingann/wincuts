@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"wincuts/keyboard"
 	"wincuts/keyboard/types"
 )
 
@@ -22,7 +21,7 @@ func TestNewBindingAction(t *testing.T) {
 		return nil
 	}
 	keys := []types.VirtualKey{types.VK_LMENU, types.VK_1}
-	binding := NewBindingAction(keys, action)
+	binding := NewBindingAction(keys, action, false)
 
 	// Execute the action to verify that the callback is correctly bound.
 	err := binding.Action()
@@ -34,14 +33,14 @@ func TestNewBindingAction(t *testing.T) {
 // This is important for ensuring that dynamic registration of shortcuts operates as expected in the application.
 func TestKeybindingServiceRegistration(t *testing.T) {
 	require := require.New(t)
-	dummyChan := make(chan keyboard.KeyEvent, 1)
-	svc := NewService(dummyChan)
+	dummyChan := make(chan *KeyBindingAction, 1)
+	svc := NewService(dummyChan, NewMatcher())
 
 	require.NotNil(svc, "NewKeybindingService should not return nil")
 
 	dummyAction := NewBindingAction([]types.VirtualKey{types.VK_LMENU}, func() error {
 		return nil
-	})
+	}, false)
 
 	require.NotPanics(func() {
 		svc.RegisterKeyBindingActions(dummyAction)
@@ -77,14 +76,14 @@ func MatchKeys(binding, input []types.VirtualKey) bool {
 func TestNewService(t *testing.T) {
 	require := require.New(t)
 
-	dummyChan := make(chan keyboard.KeyEvent, 1)
-	svc := NewService(dummyChan)
+	dummyChan := make(chan *KeyBindingAction, 1)
+	svc := NewService(dummyChan, NewMatcher())
 
 	require.NotNil(svc, "NewService should not return nil")
 
 	dummyAction := NewBindingAction([]types.VirtualKey{types.VK_LMENU}, func() error {
 		return nil
-	})
+	}, false)
 
 	require.NotPanics(func() {
 		svc.RegisterKeyBindingActions(dummyAction)

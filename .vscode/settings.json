@@ -1,0 +1,7 @@
+{
+    "go.testEnvVars": {
+        "CGO_ENABLED": "0",
+        "GOOS": "windows",
+        "GOARCH": "amd64" // Use "arm64" for ARM-based Windows
+    }
+}

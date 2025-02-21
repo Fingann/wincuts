@@ -1,3 +1,5 @@
+//go:build windows
+
 // main delegates application startup to the app package to maintain a clear separation of concerns.
 // This ensures that main remains minimal and focused solely on bootstrapping the application.
 package main

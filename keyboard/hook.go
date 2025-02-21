@@ -9,10 +9,12 @@ package keyboard
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"sync"
 
+	"wincuts/keyboard/shortcut"
 	wtypes "wincuts/keyboard/types"
 
 	"github.com/moutend/go-hook/pkg/keyboard"
@@ -24,19 +26,16 @@ import (
 type Hook struct {
 	lowLevelChan      chan types.KeyboardEvent
 	keyState          map[wtypes.VirtualKey]bool
-	subscriberManager *SubscriberManager[KeyEvent]
 	ctx               context.Context
 	cancel            context.CancelFunc
 	wg                sync.WaitGroup
-	stateMutex        sync.RWMutex // Protects keyState map
+	stateMutex        sync.RWMutex                   // Protects keyState map
+	shortcutChan      chan *shortcut.KeyBindingAction // Channel for matched shortcuts
+	shortcutService   *shortcut.Service
 }
 
 // KeyEvent represents a processed keyboard event with additional context.
-type KeyEvent struct {
-	PressedKeys []wtypes.VirtualKey // Current state of all pressed keys
-	KeyCode     wtypes.VirtualKey   // The key involved in this event
-	KeyDown     bool                // Whether this is a key press (true) or release (false)
-}
+
 
 const (
 	// DefaultEventBuffer is the size of the channel buffer for keyboard events
@@ -44,19 +43,22 @@ const (
 )
 
 // NewHook creates a new keyboard hook with default configuration.
-func NewHook() (*Hook, error) {
+func NewHook(shortcutService *shortcut.Service) (*Hook, error) {
 	lowLevelChan := make(chan types.KeyboardEvent, DefaultEventBuffer)
 	ctx, cancel := context.WithCancel(context.Background())
-	subscriberManager := NewSubscriberManager[KeyEvent]()
+
+
 
 	return &Hook{
 		lowLevelChan:      lowLevelChan,
 		keyState:          make(map[wtypes.VirtualKey]bool),
-		subscriberManager: subscriberManager,
 		ctx:               ctx,
 		cancel:            cancel,
+		shortcutChan:      shortcutService.GetShortcutChan(), // Buffered channel
+		shortcutService:   shortcutService,
 	}, nil
 }
+
 
 // updateKeyState safely updates the state of a key and returns a snapshot of all pressed keys.
 func (h *Hook) updateKeyState(key wtypes.VirtualKey, isDown bool) []wtypes.VirtualKey {
@@ -78,6 +80,11 @@ func (h *Hook) getCurrentKeyState() []wtypes.VirtualKey {
 	h.stateMutex.RLock()
 	defer h.stateMutex.RUnlock()
 	return slices.Collect(maps.Keys(h.keyState))
+}
+
+// GetShortcutChan returns the channel for matched shortcuts
+func (h *Hook) GetShortcutChan() <-chan *shortcut.KeyBindingAction {
+	return h.shortcutChan
 }
 
 // Start begins capturing keyboard events and distributing them to subscribers.
@@ -106,17 +113,34 @@ func (h *Hook) Start() error {
 				currentState := h.getCurrentKeyState()
 
 				// Create event with state before the update
-				event := KeyEvent{
+				event := shortcut.KeyEvent{
 					PressedKeys: currentState,
 					KeyCode:     vCode,
 					KeyDown:     isKeyDown,
+				}
+				if isKeyDown {
+					slog.Debug("key press", "key", vCode.KeybindName(), "state", currentState)
+				} else {
+					slog.Debug("key release", "key", vCode.KeybindName(), "state", currentState)
 				}
 
 				// Update state after creating the event
 				h.updateKeyState(vCode, isKeyDown)
 
-				// Broadcast the event
-				h.subscriberManager.Broadcast(event)
+				// Check if this is a registered shortcut
+				keyBinding, found := h.shortcutService.Match(event)
+				if !found {
+					continue
+				}
+
+				// Send the matched shortcut through the channel
+				select {
+				case h.shortcutChan <- keyBinding:
+					slog.Debug("sent shortcut", "binding", keyBinding.Binding.PrettyString())
+				default:
+					// Drop the event if the channel is full
+				}
+
 			}
 		}
 	}()
@@ -134,22 +158,10 @@ func (h *Hook) Stop() error {
 	}
 
 	close(h.lowLevelChan)
-	h.subscriberManager.CloseAll()
-
 	// Clear the key state
 	h.stateMutex.Lock()
 	h.keyState = make(map[wtypes.VirtualKey]bool)
 	h.stateMutex.Unlock()
 
 	return nil
-}
-
-// Subscribe returns a new channel that will receive keyboard events.
-func (h *Hook) Subscribe() chan KeyEvent {
-	return h.subscriberManager.AddSubscriber()
-}
-
-// Unsubscribe removes a subscriber and closes their channel.
-func (h *Hook) Unsubscribe(ch chan KeyEvent) {
-	h.subscriberManager.RemoveSubscriber(ch)
 }

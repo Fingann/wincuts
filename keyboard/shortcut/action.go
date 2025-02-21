@@ -1,7 +1,6 @@
 package shortcut
 
 import (
-	"wincuts/keyboard"
 	"wincuts/keyboard/types"
 )
 
@@ -11,13 +10,14 @@ type KeyBindingAction struct {
 	Binding types.KeyBinding 
 	Action 	KeyBindingFunc
 	onKeyDown bool
+	ShouldBlock bool
 }
 
 func (kba *KeyBindingAction) Execute() error {
 	return kba.Action()
 }
 
-func (kba *KeyBindingAction) Match(event keyboard.KeyEvent) bool {
+func (kba *KeyBindingAction) Match(event KeyEvent) bool {
 	if event.KeyDown != kba.onKeyDown{
 		return false
 	}
@@ -30,9 +30,11 @@ func NewBindingActionFromBinding(binding types.KeyBinding, action KeyBindingFunc
 		Binding: binding,
 		Action:      action,
 		onKeyDown: false,
+		ShouldBlock: false,
 	}
+
 }
 
-func NewBindingAction(keys []types.VirtualKey, action KeyBindingFunc) (KeyBindingAction) {
+func NewBindingAction(keys []types.VirtualKey, action KeyBindingFunc, shouldBlock bool) (KeyBindingAction) {
 	return NewBindingActionFromBinding(types.NewKeybinding(keys...),action)
 }

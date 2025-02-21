@@ -4,6 +4,19 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
+        {
+            "name": "debug wincuts",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.go",
+            "env": {
+                "GOOS": "windows",
+            },
+            "args": [
+                "-debug"
+            ]
+        },
         {
             "name": "list 6",
             "type": "go",

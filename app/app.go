@@ -1,3 +1,5 @@
+//go:build windows
+
 package app
 
 import (
@@ -64,9 +66,9 @@ func EnsureMinimumDesktops(dm DesktopManager, minCount int) {
 }
 
 // setupKeyBindings registers keyboard shortcuts for switching desktops and moving windows.
-func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager, traySvc *systray.Service) *shortcut.Service {
-	subscription := hook.Subscribe()
-	svc := shortcut.NewService(subscription)
+func setupKeyBindings(dm DesktopManager, traySvc *systray.Service) *shortcut.Service {
+	keyChan := make(chan *shortcut.KeyBindingAction, 100)
+	svc := shortcut.NewService(keyChan, shortcut.NewMatcher())
 
 	// Load configuration
 	cfg, err := config.LoadConfigFromArgs(os.Args)
@@ -89,6 +91,7 @@ func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager, traySvc *systray.S
 
 		// Create the appropriate action based on the binding type
 		var action func() error
+		var shouldBlock bool
 
 		switch binding.Action {
 		case "SwitchDesktop":
@@ -104,6 +107,7 @@ func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager, traySvc *systray.S
 				}
 				return nil
 			}
+			shouldBlock = true
 
 		case "MoveWindowToDesktop":
 			if len(binding.Params) != 1 {
@@ -120,12 +124,14 @@ func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager, traySvc *systray.S
 				}
 				return nil
 			}
+			shouldBlock = true
 
 		case "CreateDesktop":
 			action = func() error {
 				dm.CreateNewDesktop()
 				return nil
 			}
+			shouldBlock = true
 
 		default:
 			slog.Error("unknown action type", "action", binding.Action)
@@ -134,7 +140,7 @@ func setupKeyBindings(hook *keyboard.Hook, dm DesktopManager, traySvc *systray.S
 
 		// Register the binding
 		svc.RegisterKeyBindingActions(
-			shortcut.NewBindingAction(binding.GetVirtualKeys(), action),
+			shortcut.NewBindingAction(binding.GetVirtualKeys(), action, shouldBlock),
 		)
 
 		slog.Debug("registered shortcut",
@@ -153,31 +159,6 @@ func parseDesktopNumber(param string) int {
 		return 1
 	}
 	return num
-}
-
-// captureEvents centralizes OS signal handling and keyboard event logging.
-// By consolidating shutdown signal capture here, we ensure the application can terminate gracefully when needed.
-func captureEvents(hook *keyboard.Hook) error {
-	loggingSubscription := hook.Subscribe()
-	go func() {
-		for ev := range loggingSubscription {
-			keyB := types.NewKeybinding(ev.PressedKeys...)
-
-			// Simple event logging
-			if ev.KeyDown {
-				slog.Debug("key press", "key", ev.KeyCode.KeybindName(), "state", keyB.PrettyString())
-			} else {
-				slog.Debug("key release", "key", ev.KeyCode.KeybindName(), "state", keyB.PrettyString())
-			}
-		}
-	}()
-
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	slog.Info("started")
-	<-signalChan
-	slog.Info("stopping")
-	return nil
 }
 
 // Run aggregates the initialization of system components (desktop environment, keyboard hook, key bindings)
@@ -202,8 +183,10 @@ func Run() error {
 	EnsureMinimumDesktops(dm, cfg.VirtualDesktops.MinimumCount)
 	slog.Info("virtual desktops initialized", "count", dm.GetCurrentDesktopCount(), "minimum", cfg.VirtualDesktops.MinimumCount)
 
+
+	keybindService := setupKeyBindings(dm, traySvc)
 	// Initialize the keyboard hook; early exit if setup fails to ensure proper system state.
-	hook, err := keyboard.NewHook()
+	hook, err := keyboard.NewHook(keybindService)
 	if err != nil {
 		return fmt.Errorf("failed to create keyboard hook: %w", err)
 	}
@@ -211,10 +194,13 @@ func Run() error {
 	slog.Info("keyboard hook initialized")
 
 	// Register keyboard shortcuts to facilitate rapid desktop management.
-	keybindService := setupKeyBindings(hook, dm, traySvc)
 	keybindService.Start()
 	slog.Info("keyboard shortcuts registered")
 
-	// Start capturing events; this blocks until an OS shutdown signal is received, ensuring graceful termination.
-	return captureEvents(hook)
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	slog.Info("started")
+	<-signalChan
+	slog.Info("stopping")
+	return nil
 }

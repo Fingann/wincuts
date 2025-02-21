@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"wincuts/keyboard/shortcut"
 	wtypes "wincuts/keyboard/types"
 )
 
@@ -23,7 +24,8 @@ func TestHookSuite(t *testing.T) {
 
 func (s *HookTestSuite) SetupTest() {
 	var err error
-	s.hook, err = NewHook()
+	svc := shortcut.NewService(make(chan *shortcut.KeyBindingAction, 1), shortcut.NewMatcher())
+	s.hook, err = NewHook(svc)
 	require.NoError(s.T(), err, "NewHook should not return an error")
 }
 
@@ -41,25 +43,11 @@ func (s *HookTestSuite) TestNewHook() {
 	require.NotNil(s.hook, "NewHook should return a non-nil Hook")
 	assert.NotNil(s.hook.lowLevelChan, "lowLevelChan should be initialized")
 	assert.NotNil(s.hook.keyState, "keyState should be initialized")
-	assert.NotNil(s.hook.subscriberManager, "subscriberManager should be initialized")
 	assert.NotNil(s.hook.ctx, "context should be initialized")
 	assert.NotNil(s.hook.cancel, "cancel function should be initialized")
 }
 
 // TestSubscriptionManagement verifies that subscribers can be added and removed correctly
-func (s *HookTestSuite) TestSubscriptionManagement() {
-	assert := assert.New(s.T())
-
-	// Subscribe and verify channel is created
-	ch := s.hook.Subscribe()
-	assert.NotNil(ch, "Subscribe should return a non-nil channel")
-
-	// Unsubscribe and verify no panic occurs
-	assert.NotPanics(func() {
-		s.hook.Unsubscribe(ch)
-	}, "Unsubscribe should not panic")
-}
-
 // TestKeyEventProcessing verifies that keyboard events are correctly processed and broadcast
 func (s *HookTestSuite) TestKeyEventProcessing() {
 	require := require.New(s.T())
@@ -70,7 +58,6 @@ func (s *HookTestSuite) TestKeyEventProcessing() {
 	require.NoError(err, "Start should not return an error")
 
 	// Subscribe to receive events
-	eventChan := s.hook.Subscribe()
 
 	// Create a helper function to create keyboard events
 	createKeyEvent := func(message types.Message, key wtypes.VirtualKey) types.KeyboardEvent {
@@ -87,10 +74,8 @@ func (s *HookTestSuite) TestKeyEventProcessing() {
 
 	// Wait for and verify the event
 	select {
-	case event := <-eventChan:
-		assert.True(event.KeyDown, "KeyDown should be true for WM_KEYDOWN")
-		assert.Equal(wtypes.VK_A, event.KeyCode, "KeyCode should match the simulated key")
-		assert.Empty(event.PressedKeys, "PressedKeys should reflect state before this key press")
+	case event := <-s.hook.GetShortcutChan():
+		assert.True(event.Binding.Contains(wtypes.VK_A), "KeyDown should be true for WM_KEYDOWN")
 	case <-time.After(time.Second):
 		s.T().Fatal("Timeout waiting for key event")
 	}
@@ -100,10 +85,8 @@ func (s *HookTestSuite) TestKeyEventProcessing() {
 
 	// Verify key release event
 	select {
-	case event := <-eventChan:
-		assert.False(event.KeyDown, "KeyDown should be false for WM_KEYUP")
-		assert.Equal(wtypes.VK_A, event.KeyCode, "KeyCode should match the simulated key")
-		assert.Contains(event.PressedKeys, wtypes.VK_A, "PressedKeys should reflect state before this key release")
+	case event := <-s.hook.GetShortcutChan():
+		assert.False(event.Binding.Contains(wtypes.VK_A), "KeyDown should be false for WM_KEYUP")
 	case <-time.After(time.Second):
 		s.T().Fatal("Timeout waiting for key event")
 	}
@@ -116,10 +99,6 @@ func (s *HookTestSuite) TestHookLifecycle() {
 	// Start the hook
 	err := s.hook.Start()
 	require.NoError(err, "Start should not return an error")
-
-	// Subscribe to receive events
-	eventChan := s.hook.Subscribe()
-	require.NotNil(eventChan, "Subscribe should return a valid channel")
 
 	// Create a helper function to create keyboard events
 	createKeyEvent := func(message types.Message, key wtypes.VirtualKey) types.KeyboardEvent {
@@ -135,8 +114,8 @@ func (s *HookTestSuite) TestHookLifecycle() {
 	s.hook.lowLevelChan <- createKeyEvent(types.WM_KEYDOWN, wtypes.VK_A)
 
 	select {
-	case event := <-eventChan:
-		require.True(event.KeyDown, "Should receive events while hook is running")
+	case event := <-s.hook.GetShortcutChan():
+		require.True(event.Binding.Contains(wtypes.VK_A), "Should receive events while hook is running")
 	case <-time.After(time.Second):
 		s.T().Fatal("Timeout waiting for event")
 	}
@@ -150,7 +129,7 @@ func (s *HookTestSuite) TestHookLifecycle() {
 
 	// The channel should eventually be closed
 	select {
-	case _, ok := <-eventChan:
+	case _, ok := <-s.hook.GetShortcutChan():
 		require.False(ok, "Channel should be closed after stopping")
 	case <-time.After(time.Second):
 		// Channel might not be closed immediately, which is also acceptable
@@ -164,8 +143,6 @@ func (s *HookTestSuite) TestKeyStateTracking() {
 
 	err := s.hook.Start()
 	require.NoError(err, "Start should not return an error")
-
-	eventChan := s.hook.Subscribe()
 
 	// Create a helper function to create keyboard events
 	createKeyEvent := func(message types.Message, key wtypes.VirtualKey) types.KeyboardEvent {
@@ -185,9 +162,8 @@ func (s *HookTestSuite) TestKeyStateTracking() {
 
 	// Wait for first key event
 	select {
-	case event := <-eventChan:
-		assert.True(event.KeyDown, "KeyDown should be true for first key")
-		assert.Empty(event.PressedKeys, "PressedKeys should be empty before first key press")
+	case event := <-s.hook.GetShortcutChan():
+		assert.True(event.Binding.Contains(keys[0]), "KeyDown should be true for first key")
 	case <-time.After(time.Second):
 		s.T().Fatal("Timeout waiting for first key event")
 	}
@@ -197,9 +173,9 @@ func (s *HookTestSuite) TestKeyStateTracking() {
 
 	// Wait for second key event
 	select {
-	case event := <-eventChan:
-		assert.True(event.KeyDown, "KeyDown should be true for second key")
-		assert.Contains(event.PressedKeys, keys[0], "First key should be in pressed state")
+	case event := <-s.hook.GetShortcutChan():
+		assert.True(event.Binding.Contains(keys[1]), "KeyDown should be true for second key")
+		assert.Contains(event.Binding, keys[0], "First key should be in pressed state")
 	case <-time.After(time.Second):
 		s.T().Fatal("Timeout waiting for second key event")
 	}
@@ -209,16 +185,16 @@ func (s *HookTestSuite) TestKeyStateTracking() {
 		s.hook.lowLevelChan <- createKeyEvent(types.WM_KEYUP, keys[i])
 
 		select {
-		case event := <-eventChan:
-			assert.False(event.KeyDown, "KeyDown should be false for key release")
+		case event := <-s.hook.GetShortcutChan():
+			assert.False(event.Binding.Contains(keys[i]), "KeyDown should be false for key release")
 			if i == len(keys)-1 {
 				// When releasing the second key (A), both keys should still be in pressed state
-				assert.Contains(event.PressedKeys, keys[0], "First key should still be pressed")
-				assert.Contains(event.PressedKeys, keys[1], "Second key should still be in state before release")
+				assert.Contains(event.Binding, keys[0], "First key should still be pressed")
+				assert.Contains(event.Binding, keys[1], "Second key should still be in state before release")
 			} else {
 				// When releasing the first key (LCONTROL), only it should be in pressed state
-				assert.Contains(event.PressedKeys, keys[0], "First key should be in state before release")
-				assert.NotContains(event.PressedKeys, keys[1], "Second key should be released")
+				assert.Contains(event.Binding, keys[0], "First key should be in state before release")
+				assert.NotContains(event.Binding, keys[1], "Second key should be released")
 			}
 		case <-time.After(time.Second):
 			s.T().Fatal("Timeout waiting for key release event")

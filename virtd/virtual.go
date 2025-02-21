@@ -1,3 +1,5 @@
+//go:build windows
+
 // Package virtd implements APIs from Ciantic's VirtualDesktopAccessor.
 // More info about VDA can be found at: https://github.com/Ciantic/VirtualDesktopAccessor
 package virtd

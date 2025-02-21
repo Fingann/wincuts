@@ -1,33 +1,29 @@
 package shortcut
 
-import (
-	"fmt"
-	"wincuts/keyboard"
-)
 
+// Matcher handles matching key events to registered shortcuts
 type Matcher struct {
-	Bindings []KeyBindingAction
+	bindings []KeyBindingAction
 }
 
-func NewMatcher(bindings ...KeyBindingAction) *Matcher {
+// NewMatcher creates a new Matcher instance
+func NewMatcher() *Matcher {
 	return &Matcher{
-		Bindings: bindings,
+		bindings: make([]KeyBindingAction, 0),
 	}
 }
 
-func (kbm *Matcher) AddBindings(binding ...KeyBindingAction) {
-	kbm.Bindings = append(kbm.Bindings, binding...)
+// AddBindings registers new key binding actions
+func (m *Matcher) AddBindings(bindings ...KeyBindingAction) {
+	m.bindings = append(m.bindings, bindings...)
 }
 
-
-// Match returns the keybinding that matches the event
-// or nil if no match is found.
-func (kbm *Matcher) Match(event keyboard.KeyEvent) {
-	for _, binding := range kbm.Bindings {
+// Match checks if the event matches any registered shortcut
+func (m *Matcher) Match(event KeyEvent) (*KeyBindingAction, bool) {
+	for _, binding := range m.bindings {
 		if binding.Match(event) {
-			if err:= binding.Execute(); err != nil {
-				fmt.Println(fmt.Errorf("failed to execute action: %v", err))
-			}
+			return &binding, true
 		}
 	}
+	return nil, false
 }
